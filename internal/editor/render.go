@@ -10,10 +10,9 @@ import (
 const (
 	dim      = "\x1b[90m"
 	reset    = "\x1b[39m"
-	invert   = "\x1b[7m"
-	noInvert = "\x1b[27m"
-	alert    = "\x1b[41m"
-	noAlert  = "\x1b[49m"
+	statusBg = "\x1b[100m" // dark gray
+	alertBg  = "\x1b[41m"  // red
+	noBg     = "\x1b[49m"
 )
 
 const unsavedPrompt = "Unsaved changes: Enter saves, q discards."
@@ -48,11 +47,11 @@ func (e *editor) textRows() int {
 
 // renderStatus draws the status bar over the whole width of the last row.
 func (e *editor) renderStatus(b *bytes.Buffer) {
-	on, off, text := invert, noInvert, e.name
+	bg, text := statusBg, e.name
 	if e.prompt {
-		on, off, text = alert, noAlert, unsavedPrompt
+		bg, text = alertBg, unsavedPrompt
 	}
-	fmt.Fprintf(b, "%s%-*s%s", on, e.cols, clip([]rune(text), e.cols), off)
+	fmt.Fprintf(b, "%s%-*s%s", bg, e.cols, clip([]rune(text), e.cols), noBg)
 }
 
 func (e *editor) scroll() {

@@ -99,7 +99,7 @@ func TestLoopAsksBeforeLosingChanges(t *testing.T) {
 			if !e.quit {
 				t.Error("quit = false, want true")
 			}
-			if !strings.Contains(out, alert+unsavedPrompt) {
+			if !strings.Contains(out, alertBg+unsavedPrompt) {
 				t.Error("the prompt was never drawn")
 			}
 			data, err := os.ReadFile(e.path)

@@ -9,7 +9,7 @@ import (
 
 // statusBar is the expected status bar for name on a screen cols wide.
 func statusBar(name string, cols int) string {
-	return invert + name + strings.Repeat(" ", max(cols-len([]rune(name)), 0)) + noInvert
+	return statusBg + name + strings.Repeat(" ", max(cols-len([]rune(name)), 0)) + noBg
 }
 
 func TestRender(t *testing.T) {
@@ -106,7 +106,7 @@ func TestRenderPromptStatusBar(t *testing.T) {
 		t.Fatalf("render: %v", err)
 	}
 	want := "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39ma\x1b[K\r\n" +
-		alert + unsavedPrompt + strings.Repeat(" ", 60-len(unsavedPrompt)) + noAlert + "\x1b[1;3H\x1b[?25h"
+		alertBg + unsavedPrompt + strings.Repeat(" ", 60-len(unsavedPrompt)) + noBg + "\x1b[1;3H\x1b[?25h"
 	if got := b.String(); got != want {
 		t.Errorf("render =\n%q\nwant\n%q", got, want)
 	}
@@ -118,7 +118,7 @@ func TestRenderPromptIsClippedToTheScreenWidth(t *testing.T) {
 	if err := e.render(&b); err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if want := alert + unsavedPrompt[:8] + noAlert; !strings.Contains(b.String(), want) {
+	if want := alertBg + unsavedPrompt[:8] + noBg; !strings.Contains(b.String(), want) {
 		t.Errorf("render = %q, want it to contain %q", b.String(), want)
 	}
 }
@@ -211,3 +211,24 @@ func TestClip(t *testing.T) {
 type errWriter struct{}
 
 func (errWriter) Write([]byte) (int, error) { return 0, errors.New("write failed") }
+
+func TestRenderStatusColors(t *testing.T) {
+	tests := []struct {
+		name   string
+		prompt bool
+		want   string
+	}{
+		{"the file name gets the dark background", false, statusBg + "f.txt   " + noBg},
+		{"the unsaved prompt gets the alert background", true, alertBg + unsavedPrompt[:8] + noBg},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{name: "f.txt", cols: 8, prompt: tt.prompt}
+			var b bytes.Buffer
+			e.renderStatus(&b)
+			if got := b.String(); got != tt.want {
+				t.Errorf("renderStatus() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
