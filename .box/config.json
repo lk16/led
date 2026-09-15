@@ -1,0 +1,14 @@
+{
+  "name": "",
+  "memory": "4g",
+  "cpus": "4",
+  "root_size": "10g",
+  "docker_size": "10g",
+  "model": "claude-opus-5",
+  "prompt_file": "",
+  "kit": ".box/kit",
+  "template": "",
+  "required_mounts": {
+    "go_toolchain": "a Linux Go install for this machine's architecture, what `go env GOROOT` prints, at or above the version in go.mod -- a macOS GOROOT will not run in the sandbox"
+  }
+}

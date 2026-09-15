@@ -1,0 +1,31 @@
+schemaVersion: "2"
+kind: mixin
+name: led-network-policy
+displayName: led network policy
+description: The agent's own API calls and nothing else; Go comes from the mounted host toolchain
+
+permissions:
+  network:
+    allow:
+      - api.anthropic.com:443   # the agent's own API calls (not auto-included by the claude kit)
+      # Nothing else: led uses the Go standard library only, so no module is ever downloaded.
+
+setup:
+  startup:
+    - command: ["sudo", "rm", "-f", "/usr/local/bin/clipboard-bridge", "/usr/local/bin/sbx-clipboard"]
+      description: Remove the clipboard bridge binaries (no documented off-switch exists)
+    - command:
+        - "sh"
+        - "-c"
+        - |
+          # A mount keeps its host path, which differs per machine, so find the toolchain by content.
+          for mount in $(grep " virtiofs " /proc/mounts | cut -d" " -f2); do
+            if [ -x "$mount/bin/go" ] && [ -x "$mount/bin/gofmt" ]; then
+              sudo ln -sf "$mount/bin/go" /usr/local/bin/go
+              sudo ln -sf "$mount/bin/gofmt" /usr/local/bin/gofmt
+              break
+            fi
+          done
+      description: >-
+        Put the mounted host Go toolchain on PATH. go resolves the symlink to find
+        its GOROOT, so the standard library comes from the mount too.
