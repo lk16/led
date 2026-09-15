@@ -12,7 +12,7 @@ func TestKeywordsFor(t *testing.T) {
 		wantKeyword string // a keyword of the expected language, "" for no highlighting
 	}{
 		{"main.go", "func"},
-		{"/home/luuk/projects/led/cmd/main.go", "package"},
+		{"/home/luuk/projects/led/cmd/led/main.go", "package"},
 		{"app.js", "function"},
 		{"script.py", "elif"},
 		{"lib.rs", "impl"},

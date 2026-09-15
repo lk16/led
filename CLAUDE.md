@@ -28,7 +28,7 @@ Anything not listed here or there is out of scope until asked for.
 
 ## Layout
 
-- `cmd/main.go`: entry point, kept thin.
+- `cmd/led/main.go`: entry point, kept thin. The directory name is the binary name.
 - `internal/`: all other code.
 
 ## Workflow
