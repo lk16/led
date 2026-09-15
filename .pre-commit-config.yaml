@@ -1,0 +1,26 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: debug-statements
+      - id: check-yaml
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        language: system
+        entry: gofmt -l -w
+        types: [go]
+
+      - id: golangci-lint
+        name: run golangci-lint
+        language: system
+        entry: golangci-lint run --fix ./cmd/... ./internal/...
+        types: [go]
+        pass_filenames: false
