@@ -77,6 +77,25 @@ func TestRender(t *testing.T) {
 			want:  "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39ma\x1b[K\r\n" + statusBar("~/some/l", 8) + "\x1b[1;3H\x1b[?25h",
 		},
 		{
+			name:  "tabs are drawn as spaces up to the next tab stop",
+			lines: []string{"\tab"},
+			file:  "f.txt",
+			rows:  2,
+			cols:  20,
+			cx:    1,
+			want: "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39m        ab\x1b[K\r\n" +
+				statusBar("f.txt", 20) + "\x1b[1;11H\x1b[?25h",
+		},
+		{
+			name:  "a line with tabs is clipped by screen columns",
+			lines: []string{"\tabcdef"},
+			file:  "f.txt",
+			rows:  2,
+			cols:  12,
+			want: "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39m        ab\x1b[K\r\n" +
+				statusBar("f.txt", 12) + "\x1b[1;3H\x1b[?25h",
+		},
+		{
 			name:  "only the status bar fits",
 			lines: []string{"a"},
 			file:  "f.txt",
@@ -230,5 +249,93 @@ func TestRenderStatusColors(t *testing.T) {
 				t.Errorf("renderStatus() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestExpandTabs(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{"no tabs", "ab", "ab"},
+		{"leading tab", "\tab", "        ab"},
+		{"tab after text", "ab\tc", "ab      c"},
+		{"tab on a tab stop", "abcdefgh\tc", "abcdefgh        c"},
+		{"two tabs", "\t\ta", "                a"},
+		{"tab counts runes not bytes", "é\ta", "é       a"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := string(expandTabs([]rune(tt.line))); got != tt.want {
+				t.Errorf("expandTabs(%q) = %q, want %q", tt.line, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCursorColumn(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		cx   int
+		want int
+	}{
+		{"without tabs", "abc", 2, 2},
+		{"before a tab", "\tabc", 0, 0},
+		{"after a tab", "\tabc", 1, 8},
+		{"after a tab and text", "\tabc", 3, 10},
+		{"past the end of the line", "ab", 5, 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{lines: toLines([]string{tt.line}), cx: tt.cx}
+			if got := e.cursorColumn(); got != tt.want {
+				t.Errorf("cursorColumn() with line %q and cx=%d = %d, want %d", tt.line, tt.cx, got, tt.want)
+			}
+		})
+	}
+}
+
+// visibleRows returns what render wrote per screen row, without the escape codes.
+func visibleRows(out string) []string {
+	var rows []string
+	var row strings.Builder
+	for i := 0; i < len(out); {
+		switch {
+		case strings.HasPrefix(out[i:], "\x1b["):
+			for i += 2; i < len(out) && out[i] < '@' || out[i] > '~'; i++ {
+			}
+			i++
+		case strings.HasPrefix(out[i:], "\r\n"):
+			rows = append(rows, row.String())
+			row.Reset()
+			i += 2
+		default:
+			row.WriteByte(out[i])
+			i++
+		}
+	}
+	return append(rows, row.String())
+}
+
+// A tab moves the cursor without erasing and can push a row past the screen width,
+// which left old text on screen while scrolling through an indented file.
+func TestRenderScrollingIndentedFileFillsEveryRow(t *testing.T) {
+	lines := []string{"func main() {", "\tfor i := range 3 {", "\t\tprintln(i, \"a long line of text\")", "\t}", "}"}
+	e := &editor{name: "f.go", lines: toLines(lines), rows: 4, cols: 24, keywords: keywordsFor("f.go")}
+	for e.cy = 0; e.cy < len(e.lines); e.cy++ {
+		var b bytes.Buffer
+		if err := e.render(&b); err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		for i, row := range visibleRows(b.String()) {
+			if strings.ContainsRune(row, '\t') {
+				t.Errorf("cy=%d row %d = %q, want no tab", e.cy, i, row)
+			}
+			if got := len([]rune(row)); got > e.cols {
+				t.Errorf("cy=%d row %d is %d columns wide, want at most %d: %q", e.cy, i, got, e.cols, row)
+			}
+		}
 	}
 }

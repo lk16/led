@@ -17,6 +17,9 @@ const (
 
 const unsavedPrompt = "Unsaved changes: Enter saves, q discards."
 
+// tabWidth is the number of columns between tab stops. See docs/terminal.md.
+const tabWidth = 8
+
 // render draws the whole screen in one write.
 func (e *editor) render(w io.Writer) error {
 	e.scroll()
@@ -27,7 +30,7 @@ func (e *editor) render(w io.Writer) error {
 	b.WriteString("\x1b[?25l\x1b[H")
 	for i := range e.textRows() {
 		if row := e.rowOff + i; row < len(e.lines) {
-			text := highlight(clip(e.lines[row], e.cols-gutter), e.keywords)
+			text := highlight(clip(expandTabs(e.lines[row]), e.cols-gutter), e.keywords)
 			fmt.Fprintf(&b, "%s%*d %s%s", dim, numWidth, row+1, reset, text)
 		} else {
 			b.WriteString(dim + "~" + reset)
@@ -35,7 +38,7 @@ func (e *editor) render(w io.Writer) error {
 		b.WriteString("\x1b[K\r\n")
 	}
 	e.renderStatus(&b)
-	fmt.Fprintf(&b, "\x1b[%d;%dH\x1b[?25h", max(e.cy-e.rowOff+1, 1), min(e.cx+gutter+1, e.cols))
+	fmt.Fprintf(&b, "\x1b[%d;%dH\x1b[?25h", max(e.cy-e.rowOff+1, 1), min(e.cursorColumn()+gutter+1, e.cols))
 
 	_, err := w.Write(b.Bytes())
 	return err
@@ -62,6 +65,29 @@ func (e *editor) scroll() {
 	if e.cy >= e.rowOff+e.textRows() {
 		e.rowOff = e.cy - e.textRows() + 1
 	}
+}
+
+// cursorColumn is the screen column of the cursor in its line, counted from 0.
+func (e *editor) cursorColumn() int {
+	if e.cy >= len(e.lines) {
+		return e.cx
+	}
+	return len(expandTabs(e.lines[e.cy][:min(e.cx, len(e.lines[e.cy]))]))
+}
+
+// expandTabs replaces every tab by spaces up to the next tab stop. See docs/terminal.md.
+func expandTabs(line []rune) []rune {
+	out := make([]rune, 0, len(line))
+	for _, r := range line {
+		if r != '\t' {
+			out = append(out, r)
+			continue
+		}
+		for n := tabWidth - len(out)%tabWidth; n > 0; n-- {
+			out = append(out, ' ')
+		}
+	}
+	return out
 }
 
 func clip(line []rune, width int) string {
