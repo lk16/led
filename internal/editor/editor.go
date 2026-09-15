@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 type editor struct {
@@ -81,10 +83,11 @@ func (e *editor) handleKey(k key) error {
 		e.splitLine()
 	case keyBack:
 		e.backspace()
-	case keyUp, keyDown, keyLeft, keyRight:
-		e.move(k)
 	default:
-		if k >= ' ' {
+		switch {
+		case k.isArrow():
+			e.move(k)
+		case k >= ' ' && k <= utf8.MaxRune:
 			e.insert(rune(k))
 		}
 	}
@@ -123,11 +126,11 @@ func (e *editor) save() error {
 
 func (e *editor) move(k key) {
 	switch k {
-	case keyUp:
+	case keyUp, keyUp | modCtrl:
 		if e.cy > 0 {
 			e.cy--
 		}
-	case keyDown:
+	case keyDown, keyDown | modCtrl:
 		if e.cy < len(e.lines)-1 {
 			e.cy++
 		}
@@ -147,10 +150,52 @@ func (e *editor) move(k key) {
 			e.cy++
 			e.cx = 0
 		}
+	case keyLeft | modCtrl:
+		switch {
+		case e.cx > 0:
+			e.cx = wordLeft(e.lines[e.cy], e.cx)
+		case e.cy > 0:
+			e.cy--
+			e.cx = len(e.lines[e.cy])
+		}
+	case keyRight | modCtrl:
+		switch {
+		case e.cx < len(e.lines[e.cy]):
+			e.cx = wordRight(e.lines[e.cy], e.cx)
+		case e.cy < len(e.lines)-1:
+			e.cy++
+			e.cx = 0
+		}
 	}
 	if e.cx > len(e.lines[e.cy]) {
 		e.cx = len(e.lines[e.cy])
 	}
+}
+
+// wordLeft returns the column of the start of the word before cx.
+func wordLeft(line []rune, cx int) int {
+	for cx > 0 && !isWordRune(line[cx-1]) {
+		cx--
+	}
+	for cx > 0 && isWordRune(line[cx-1]) {
+		cx--
+	}
+	return cx
+}
+
+// wordRight returns the column just past the end of the word after cx.
+func wordRight(line []rune, cx int) int {
+	for cx < len(line) && !isWordRune(line[cx]) {
+		cx++
+	}
+	for cx < len(line) && isWordRune(line[cx]) {
+		cx++
+	}
+	return cx
+}
+
+func isWordRune(r rune) bool {
+	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 func (e *editor) insert(r rune) {

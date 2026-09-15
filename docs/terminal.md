@@ -15,6 +15,13 @@ Plain ANSI escape codes. No TUI library like tcell or bubbletea.
 - No dependency.
 - Tests compare the output as plain bytes, without a real terminal.
 
+## Keys
+
+An arrow key with ctrl or shift arrives as an escape sequence with a modifier
+parameter, `\x1b[1;5C` for ctrl + right. The parameter is 1 plus a bit per
+modifier: 1 for shift, 2 for alt, 4 for ctrl. led reads the bits it uses and
+ignores the rest.
+
 ## Tabs
 
 led draws a tab as spaces up to the next tab stop, every 8 columns, counted from
