@@ -26,13 +26,17 @@ func Run(path string) error {
 		e.rows, e.cols = rows, cols
 	}
 
-	in := bufio.NewReader(os.Stdin)
 	out := bufio.NewWriter(os.Stdout)
 	defer func() {
 		_, _ = out.WriteString("\x1b[2J\x1b[H")
 		_ = out.Flush()
 	}()
 
+	return e.loop(bufio.NewReader(os.Stdin), out)
+}
+
+// loop draws the screen and handles keys until the user closes the editor.
+func (e *editor) loop(in *bufio.Reader, out *bufio.Writer) error {
 	for !e.quit {
 		if err := e.render(out); err != nil {
 			return err
