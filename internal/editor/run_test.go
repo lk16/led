@@ -99,7 +99,7 @@ func TestLoopAsksBeforeLosingChanges(t *testing.T) {
 			if !e.quit {
 				t.Error("quit = false, want true")
 			}
-			if !strings.Contains(out, alert+unsavedPrompt) {
+			if !strings.Contains(out, alertBg+unsavedPrompt) {
 				t.Error("the prompt was never drawn")
 			}
 			data, err := os.ReadFile(e.path)
@@ -146,5 +146,34 @@ func TestLoopReturnsWriteError(t *testing.T) {
 func TestRunReturnsOpenError(t *testing.T) {
 	if err := Run(t.TempDir()); err == nil {
 		t.Error("Run on a directory: got nil error, want an error")
+	}
+}
+
+func TestParseArgs(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		want    string
+		wantErr bool
+	}{
+		{name: "one file", args: []string{"f.txt"}, want: "f.txt"},
+		{name: "file after a dash dash", args: []string{"--", "f.txt"}, want: "f.txt"},
+		{name: "go file after a dash dash", args: []string{"--", "some_file.go"}, want: "some_file.go"},
+		{name: "a file named dash dash", args: []string{"--", "--"}, want: "--"},
+		{name: "no file", args: nil, wantErr: true},
+		{name: "only a dash dash", args: []string{"--"}, wantErr: true},
+		{name: "two files", args: []string{"a.txt", "b.txt"}, wantErr: true},
+		{name: "two files after a dash dash", args: []string{"--", "a.txt", "b.txt"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseArgs(tt.args)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ParseArgs(%q) error = %v, want error %v", tt.args, err, tt.wantErr)
+			}
+			if got != tt.want && !tt.wantErr {
+				t.Errorf("ParseArgs(%q) = %q, want %q", tt.args, got, tt.want)
+			}
+		})
 	}
 }

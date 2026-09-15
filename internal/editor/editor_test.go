@@ -507,3 +507,24 @@ func TestAnswerPromptFailedSaveDoesNotQuit(t *testing.T) {
 		t.Error("quit = true, want false")
 	}
 }
+
+func TestNewEditorPicksKeywordsByExtension(t *testing.T) {
+	tests := []struct {
+		file string
+		want bool // the editor has keywords
+	}{
+		{"main.go", true},
+		{"notes.txt", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.file, func(t *testing.T) {
+			e, err := newEditor(filepath.Join(t.TempDir(), tt.file))
+			if err != nil {
+				t.Fatalf("newEditor: %v", err)
+			}
+			if got := e.keywords != nil; got != tt.want {
+				t.Errorf("keywords set = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
