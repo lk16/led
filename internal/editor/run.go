@@ -9,6 +9,17 @@ import (
 	"github.com/lk16/led/internal/terminal"
 )
 
+// ParseArgs returns the file to open. A leading "--" is skipped. See docs/running.md.
+func ParseArgs(args []string) (string, error) {
+	if len(args) > 0 && args[0] == "--" {
+		args = args[1:]
+	}
+	if len(args) != 1 {
+		return "", errors.New("usage: led <file>")
+	}
+	return args[0], nil
+}
+
 // Run opens path and returns once the user closes the editor.
 func Run(path string) error {
 	e, err := newEditor(path)

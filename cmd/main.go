@@ -8,11 +8,12 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: led <file>")
+	path, err := editor.ParseArgs(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	if err := editor.Run(os.Args[1]); err != nil {
+	if err := editor.Run(path); err != nil {
 		fmt.Fprintln(os.Stderr, "led:", err)
 		os.Exit(1)
 	}
