@@ -339,3 +339,131 @@ func TestRenderScrollingIndentedFileFillsEveryRow(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderLineSelection(t *testing.T) {
+	tests := []struct {
+		name      string
+		lines     []string
+		file      string
+		anchor    position
+		cx, cy    int
+		row       int
+		width     int
+		selecting bool
+		want      string
+	}{
+		{
+			name: "nothing selected", lines: []string{"abcd"},
+			row: 0, width: 20, want: "abcd",
+		},
+		{
+			name: "part of the line", lines: []string{"abcd"}, selecting: true,
+			anchor: position{0, 1}, cx: 3, row: 0, width: 20, want: "a" + selBg + "bc" + noBg + "d",
+		},
+		{
+			name: "selected towards the start of the line", lines: []string{"abcd"}, selecting: true,
+			anchor: position{0, 3}, cx: 1, row: 0, width: 20, want: "a" + selBg + "bc" + noBg + "d",
+		},
+		{
+			name: "the first row of a selection runs to the end of the line", lines: []string{"ab", "cd"}, selecting: true,
+			anchor: position{0, 1}, cx: 1, cy: 1, row: 0, width: 20, want: "a" + selBg + "b" + noBg,
+		},
+		{
+			name: "the last row of a selection starts at the line start", lines: []string{"ab", "cd"}, selecting: true,
+			anchor: position{0, 1}, cx: 1, cy: 1, row: 1, width: 20, want: selBg + "c" + noBg + "d",
+		},
+		{
+			name: "a row between the ends is selected whole", lines: []string{"ab", "cd", "ef"}, selecting: true,
+			anchor: position{0, 1}, cx: 1, cy: 2, row: 1, width: 20, want: selBg + "cd" + noBg,
+		},
+		{
+			name: "a row outside the selection", lines: []string{"ab", "cd"}, selecting: true,
+			anchor: position{1, 0}, cx: 1, cy: 1, row: 0, width: 20, want: "ab",
+		},
+		{
+			name: "tabs are selected as the spaces they are drawn as", lines: []string{"\tab"}, selecting: true,
+			anchor: position{0, 0}, cx: 2, row: 0, width: 20, want: selBg + "        a" + noBg + "b",
+		},
+		{
+			name: "a selection past the screen width is clipped", lines: []string{"abcdef"}, selecting: true,
+			anchor: position{0, 1}, cx: 6, row: 0, width: 3, want: "a" + selBg + "bc" + noBg,
+		},
+		{
+			name: "keywords in a selection stay colored", lines: []string{"func x"}, file: "f.go", selecting: true,
+			anchor: position{0, 0}, cx: 4, row: 0, width: 20,
+			want: selBg + keywordColor + "func" + reset + noBg + " x",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{
+				lines: toLines(tt.lines), keywords: keywordsFor(tt.file),
+				anchor: tt.anchor, cx: tt.cx, cy: tt.cy, selecting: tt.selecting,
+			}
+			if got := e.renderLine(tt.row, tt.width); got != tt.want {
+				t.Errorf("renderLine(%d, %d) = %q, want %q", tt.row, tt.width, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenderSelectedText(t *testing.T) {
+	e := &editor{name: "f.txt", lines: toLines([]string{"abcd"}), rows: 2, cols: 20, anchor: position{0, 1}, cx: 3, selecting: true}
+	var b bytes.Buffer
+	if err := e.render(&b); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	want := "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39ma" + selBg + "bc" + noBg + "d\x1b[K\r\n" +
+		statusBar("f.txt", 20) + "\x1b[1;6H\x1b[?25h"
+	if got := b.String(); got != want {
+		t.Errorf("render =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestSelectedColumns(t *testing.T) {
+	tests := []struct {
+		name             string
+		lines            []string
+		anchor           position
+		cx, cy           int
+		selecting        bool
+		row              int
+		width            int
+		wantFrom, wantTo int
+	}{
+		{name: "nothing selected", lines: []string{"abcd"}, row: 0, width: 4},
+		{
+			name: "part of a row", lines: []string{"abcd"}, selecting: true,
+			anchor: position{0, 1}, cx: 3, row: 0, width: 4, wantFrom: 1, wantTo: 3,
+		},
+		{
+			name: "a row above the selection", lines: []string{"ab", "cd"}, selecting: true,
+			anchor: position{1, 0}, cx: 1, cy: 1, row: 0, width: 2,
+		},
+		{
+			name: "a row below the selection", lines: []string{"ab", "cd"}, selecting: true,
+			anchor: position{0, 0}, cx: 1, row: 1, width: 2,
+		},
+		{
+			name: "an empty selection", lines: []string{"abcd"}, selecting: true,
+			anchor: position{0, 2}, cx: 2, row: 0, width: 4,
+		},
+		{
+			name: "the ends are clipped to the width", lines: []string{"abcdef"}, selecting: true,
+			anchor: position{0, 1}, cx: 6, row: 0, width: 3, wantFrom: 1, wantTo: 3,
+		},
+		{
+			name: "a start past the width selects nothing", lines: []string{"abcdef"}, selecting: true,
+			anchor: position{0, 4}, cx: 6, row: 0, width: 3, wantFrom: 3, wantTo: 3,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{lines: toLines(tt.lines), anchor: tt.anchor, cx: tt.cx, cy: tt.cy, selecting: tt.selecting}
+			from, to := e.selectedColumns(tt.row, tt.width)
+			if from != tt.wantFrom || to != tt.wantTo {
+				t.Errorf("selectedColumns(%d, %d) = %d, %d, want %d, %d", tt.row, tt.width, from, to, tt.wantFrom, tt.wantTo)
+			}
+		})
+	}
+}

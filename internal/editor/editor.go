@@ -10,18 +10,30 @@ import (
 	"unicode/utf8"
 )
 
+// A position is a place in the buffer. Its fields are ordered as a line is read.
+type position struct {
+	y, x int
+}
+
+// before reports whether p comes earlier in the buffer than q.
+func (p position) before(q position) bool {
+	return p.y < q.y || p.y == q.y && p.x < q.x
+}
+
 type editor struct {
-	path     string
-	name     string          // path as shown in the status bar
-	keywords map[string]bool // keywords to highlight, nil for an unknown file type
-	lines    [][]rune
-	cx, cy   int // cursor column and row in the buffer
-	rowOff   int // first buffer row shown on screen
-	rows     int
-	cols     int
-	dirty    bool // buffer has edits that are not saved
-	prompt   bool // asking what to do with those edits
-	quit     bool
+	path      string
+	name      string          // path as shown in the status bar
+	keywords  map[string]bool // keywords to highlight, nil for an unknown file type
+	lines     [][]rune
+	cx, cy    int      // cursor column and row in the buffer
+	anchor    position // other end of the selection, only set while selecting
+	selecting bool     // shift + arrows are extending a selection
+	rowOff    int      // first buffer row shown on screen
+	rows      int
+	cols      int
+	dirty     bool // buffer has edits that are not saved
+	prompt    bool // asking what to do with those edits
+	quit      bool
 }
 
 func newEditor(path string) (*editor, error) {
@@ -66,10 +78,39 @@ func splitLines(data []byte) [][]rune {
 	return lines
 }
 
+// handleKey applies one key press. A shift + arrow selects from where the cursor
+// was, every other key drops the selection.
 func (e *editor) handleKey(k key) error {
 	if e.prompt {
 		return e.answerPrompt(k)
 	}
+	if k&modShift != 0 && !e.selecting {
+		e.anchor, e.selecting = e.cursor(), true
+	}
+	err := e.applyKey(k)
+	if k&modShift == 0 {
+		e.selecting = false
+	}
+	return err
+}
+
+func (e *editor) cursor() position {
+	return position{y: e.cy, x: e.cx}
+}
+
+// selection returns the start and the end of the selection, in buffer order.
+// They are equal when nothing is selected.
+func (e *editor) selection() (position, position) {
+	if !e.selecting {
+		return e.cursor(), e.cursor()
+	}
+	if e.anchor.before(e.cursor()) {
+		return e.anchor, e.cursor()
+	}
+	return e.cursor(), e.anchor
+}
+
+func (e *editor) applyKey(k key) error {
 	switch k {
 	case keyCtrlW:
 		if e.dirty {
@@ -124,8 +165,9 @@ func (e *editor) save() error {
 	return nil
 }
 
+// move moves the cursor. Shift does not change where it lands, only what gets selected.
 func (e *editor) move(k key) {
-	switch k {
+	switch k &^ modShift {
 	case keyUp, keyUp | modCtrl:
 		if e.cy > 0 {
 			e.cy--

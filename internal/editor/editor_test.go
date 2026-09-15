@@ -594,3 +594,114 @@ func TestWordRight(t *testing.T) {
 		})
 	}
 }
+
+func TestSelectWithShiftArrows(t *testing.T) {
+	tests := []struct {
+		name          string
+		lines         []string
+		cx, cy        int
+		keys          []key
+		wantStart     position
+		wantEnd       position
+		wantSelecting bool
+	}{
+		{
+			name: "shift right selects the rune after the cursor", lines: []string{"abc"},
+			keys: []key{keyRight | modShift}, wantStart: position{0, 0}, wantEnd: position{0, 1}, wantSelecting: true,
+		},
+		{
+			name: "shift right twice selects two runes", lines: []string{"abc"},
+			keys:      []key{keyRight | modShift, keyRight | modShift},
+			wantStart: position{0, 0}, wantEnd: position{0, 2}, wantSelecting: true,
+		},
+		{
+			name: "shift left selects towards the start of the line", lines: []string{"abc"}, cx: 2,
+			keys: []key{keyLeft | modShift}, wantStart: position{0, 1}, wantEnd: position{0, 2}, wantSelecting: true,
+		},
+		{
+			name: "ctrl shift right selects a word", lines: []string{"one two"},
+			keys: []key{keyRight | modShift | modCtrl}, wantStart: position{0, 0}, wantEnd: position{0, 3}, wantSelecting: true,
+		},
+		{
+			name: "ctrl shift left selects a word back", lines: []string{"one two"}, cx: 7,
+			keys: []key{keyLeft | modShift | modCtrl}, wantStart: position{0, 4}, wantEnd: position{0, 7}, wantSelecting: true,
+		},
+		{
+			name: "shift down selects into the next line", lines: []string{"ab", "cd"}, cx: 1,
+			keys: []key{keyDown | modShift}, wantStart: position{0, 1}, wantEnd: position{1, 1}, wantSelecting: true,
+		},
+		{
+			name: "shift up selects into the previous line", lines: []string{"ab", "cd"}, cx: 1, cy: 1,
+			keys: []key{keyUp | modShift}, wantStart: position{0, 1}, wantEnd: position{1, 1}, wantSelecting: true,
+		},
+		{
+			name: "back at the anchor nothing is selected", lines: []string{"abc"},
+			keys: []key{keyRight | modShift, keyLeft | modShift}, wantStart: position{0, 0}, wantEnd: position{0, 0}, wantSelecting: true,
+		},
+		{
+			name: "an arrow without shift drops the selection", lines: []string{"abc"},
+			keys: []key{keyRight | modShift, keyRight}, wantStart: position{0, 2}, wantEnd: position{0, 2},
+		},
+		{
+			name: "typing drops the selection", lines: []string{"abc"},
+			keys: []key{keyRight | modShift, 'x'}, wantStart: position{0, 2}, wantEnd: position{0, 2},
+		},
+		{
+			name: "backspace drops the selection", lines: []string{"abc"},
+			keys: []key{keyRight | modShift, keyBack}, wantStart: position{0, 0}, wantEnd: position{0, 0},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{lines: toLines(tt.lines), cx: tt.cx, cy: tt.cy}
+			for i, k := range tt.keys {
+				if err := e.handleKey(k); err != nil {
+					t.Fatalf("key %d: %v", i, err)
+				}
+			}
+			start, end := e.selection()
+			if start != tt.wantStart || end != tt.wantEnd {
+				t.Errorf("selection() = %v..%v, want %v..%v", start, end, tt.wantStart, tt.wantEnd)
+			}
+			if e.selecting != tt.wantSelecting {
+				t.Errorf("selecting = %v, want %v", e.selecting, tt.wantSelecting)
+			}
+		})
+	}
+}
+
+func TestSelectionKeepsTheAnchorWhileShiftIsHeld(t *testing.T) {
+	e := &editor{lines: toLines([]string{"abcdef"}), cx: 3}
+	for _, k := range []key{keyRight | modShift, keyRight | modShift, keyLeft | modShift} {
+		if err := e.handleKey(k); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if want := (position{0, 3}); e.anchor != want {
+		t.Errorf("anchor = %v, want %v", e.anchor, want)
+	}
+	if e.cx != 4 {
+		t.Errorf("cx = %d, want 4", e.cx)
+	}
+}
+
+func TestPositionBefore(t *testing.T) {
+	tests := []struct {
+		name string
+		p, q position
+		want bool
+	}{
+		{"earlier row", position{0, 5}, position{1, 0}, true},
+		{"later row", position{1, 0}, position{0, 5}, false},
+		{"same row, earlier column", position{1, 1}, position{1, 2}, true},
+		{"same row, later column", position{1, 2}, position{1, 1}, false},
+		{"the same position", position{1, 1}, position{1, 1}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.p.before(tt.q); got != tt.want {
+				t.Errorf("%v.before(%v) = %v, want %v", tt.p, tt.q, got, tt.want)
+			}
+		})
+	}
+}

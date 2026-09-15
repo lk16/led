@@ -22,6 +22,15 @@ parameter, `\x1b[1;5C` for ctrl + right. The parameter is 1 plus a bit per
 modifier: 1 for shift, 2 for alt, 4 for ctrl. led reads the bits it uses and
 ignores the rest.
 
+## Selection
+
+Selected text gets a blue background. led draws a line in three parts: before,
+inside and after the selection. The background is only set around the middle
+part, so keyword colors inside it are untouched.
+
+The background is closed before the code that clears the rest of the row, or
+terminals that erase with the current background would color the whole row.
+
 ## Tabs
 
 led draws a tab as spaces up to the next tab stop, every 8 columns, counted from
