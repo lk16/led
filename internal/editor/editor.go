@@ -10,6 +10,7 @@ import (
 
 type editor struct {
 	path   string
+	name   string // path as shown in the status bar
 	lines  [][]rune
 	cx, cy int // cursor column and row in the buffer
 	rowOff int // first buffer row shown on screen
@@ -23,7 +24,24 @@ func newEditor(path string) (*editor, error) {
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
-	return &editor{path: path, lines: splitLines(data), rows: 24, cols: 80}, nil
+	home, _ := os.UserHomeDir()
+	return &editor{path: path, name: shortPath(path, home), lines: splitLines(data), rows: 24, cols: 80}, nil
+}
+
+// shortPath replaces a leading home directory with "~".
+func shortPath(path, home string) string {
+	home = strings.TrimSuffix(home, "/")
+	if home == "" || !strings.HasPrefix(path, home) {
+		return path
+	}
+	switch rest := path[len(home):]; {
+	case rest == "":
+		return "~"
+	case rest[0] == '/':
+		return "~" + rest
+	default:
+		return path
+	}
 }
 
 func splitLines(data []byte) [][]rune {

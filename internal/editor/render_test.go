@@ -3,13 +3,20 @@ package editor
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 )
+
+// statusBar is the expected status bar for name on a screen cols wide.
+func statusBar(name string, cols int) string {
+	return invert + name + strings.Repeat(" ", max(cols-len([]rune(name)), 0)) + noInvert
+}
 
 func TestRender(t *testing.T) {
 	tests := []struct {
 		name  string
 		lines []string
+		file  string
 		rows  int
 		cols  int
 		cx    int
@@ -19,45 +26,68 @@ func TestRender(t *testing.T) {
 		{
 			name:  "one line and a filler row",
 			lines: []string{"ab"},
-			rows:  2,
+			file:  "f.txt",
+			rows:  3,
 			cols:  20,
-			want:  "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39mab\x1b[K" + "\r\n" + "\x1b[90m~\x1b[39m\x1b[K" + "\x1b[1;3H\x1b[?25h",
+			want: "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39mab\x1b[K\r\n" + "\x1b[90m~\x1b[39m\x1b[K\r\n" +
+				statusBar("f.txt", 20) + "\x1b[1;3H\x1b[?25h",
 		},
 		{
 			name:  "cursor position follows cx and cy",
 			lines: []string{"ab", "cd"},
-			rows:  2,
+			file:  "f.txt",
+			rows:  3,
 			cols:  20,
 			cx:    1,
 			cy:    1,
-			want:  "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39mab\x1b[K" + "\r\n" + "\x1b[90m2 \x1b[39mcd\x1b[K" + "\x1b[2;4H\x1b[?25h",
+			want: "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39mab\x1b[K\r\n" + "\x1b[90m2 \x1b[39mcd\x1b[K\r\n" +
+				statusBar("f.txt", 20) + "\x1b[2;4H\x1b[?25h",
 		},
 		{
 			name:  "line numbers are padded to the widest number",
 			lines: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"},
-			rows:  1,
+			file:  "f.txt",
+			rows:  2,
 			cols:  20,
-			want:  "\x1b[?25l\x1b[H" + "\x1b[90m 1 \x1b[39ma\x1b[K" + "\x1b[1;4H\x1b[?25h",
+			want:  "\x1b[?25l\x1b[H" + "\x1b[90m 1 \x1b[39ma\x1b[K\r\n" + statusBar("f.txt", 20) + "\x1b[1;4H\x1b[?25h",
 		},
 		{
 			name:  "long line is clipped to the screen width",
 			lines: []string{"abcdef"},
-			rows:  1,
+			file:  "f.txt",
+			rows:  2,
 			cols:  5,
-			want:  "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39mabc\x1b[K" + "\x1b[1;3H\x1b[?25h",
+			want:  "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39mabc\x1b[K\r\n" + statusBar("f.txt", 5) + "\x1b[1;3H\x1b[?25h",
 		},
 		{
 			name:  "cursor stays on screen",
 			lines: []string{"abcdef"},
-			rows:  1,
+			file:  "f.txt",
+			rows:  2,
 			cols:  5,
 			cx:    6,
-			want:  "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39mabc\x1b[K" + "\x1b[1;5H\x1b[?25h",
+			want:  "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39mabc\x1b[K\r\n" + statusBar("f.txt", 5) + "\x1b[1;5H\x1b[?25h",
+		},
+		{
+			name:  "long path is clipped to the screen width",
+			lines: []string{"a"},
+			file:  "~/some/long/path.txt",
+			rows:  2,
+			cols:  8,
+			want:  "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39ma\x1b[K\r\n" + statusBar("~/some/l", 8) + "\x1b[1;3H\x1b[?25h",
+		},
+		{
+			name:  "only the status bar fits",
+			lines: []string{"a"},
+			file:  "f.txt",
+			rows:  1,
+			cols:  8,
+			want:  "\x1b[?25l\x1b[H" + statusBar("f.txt", 8) + "\x1b[1;3H\x1b[?25h",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			e := &editor{lines: toLines(tt.lines), rows: tt.rows, cols: tt.cols, cx: tt.cx, cy: tt.cy}
+			e := &editor{name: tt.file, lines: toLines(tt.lines), rows: tt.rows, cols: tt.cols, cx: tt.cx, cy: tt.cy}
 			var b bytes.Buffer
 			if err := e.render(&b); err != nil {
 				t.Fatalf("render: %v", err)
@@ -70,28 +100,46 @@ func TestRender(t *testing.T) {
 }
 
 func TestRenderScrolledView(t *testing.T) {
-	e := &editor{lines: toLines([]string{"a", "b", "c"}), rows: 1, cols: 20, cy: 2}
+	e := &editor{name: "f.txt", lines: toLines([]string{"a", "b", "c"}), rows: 2, cols: 20, cy: 2}
 	var b bytes.Buffer
 	if err := e.render(&b); err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	want := "\x1b[?25l\x1b[H" + "\x1b[90m3 \x1b[39mc\x1b[K" + "\x1b[1;3H\x1b[?25h"
+	want := "\x1b[?25l\x1b[H" + "\x1b[90m3 \x1b[39mc\x1b[K\r\n" + statusBar("f.txt", 20) + "\x1b[1;3H\x1b[?25h"
 	if got := b.String(); got != want {
 		t.Errorf("render =\n%q\nwant\n%q", got, want)
 	}
 }
 
 func TestRenderWriteError(t *testing.T) {
-	e := &editor{lines: toLines([]string{"a"}), rows: 1, cols: 20}
+	e := &editor{lines: toLines([]string{"a"}), rows: 2, cols: 20}
 	if err := e.render(errWriter{}); err == nil {
 		t.Error("render to a failing writer: got nil error, want an error")
+	}
+}
+
+func TestTextRows(t *testing.T) {
+	tests := []struct {
+		rows int
+		want int
+	}{
+		{24, 23},
+		{2, 1},
+		{1, 0},
+		{0, 0},
+	}
+	for _, tt := range tests {
+		e := &editor{rows: tt.rows}
+		if got := e.textRows(); got != tt.want {
+			t.Errorf("textRows() with rows=%d = %d, want %d", tt.rows, got, tt.want)
+		}
 	}
 }
 
 func TestScroll(t *testing.T) {
 	tests := []struct {
 		name       string
-		rows       int
+		textRows   int
 		cy         int
 		rowOff     int
 		wantRowOff int
@@ -104,7 +152,7 @@ func TestScroll(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			e := &editor{rows: tt.rows, cy: tt.cy, rowOff: tt.rowOff}
+			e := &editor{rows: tt.textRows + 1, cy: tt.cy, rowOff: tt.rowOff}
 			e.scroll()
 			if e.rowOff != tt.wantRowOff {
 				t.Errorf("rowOff = %d, want %d", e.rowOff, tt.wantRowOff)

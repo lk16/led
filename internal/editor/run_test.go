@@ -51,7 +51,7 @@ func TestLoopSavesOnCtrlS(t *testing.T) {
 
 func TestLoopRedrawsAfterEveryKey(t *testing.T) {
 	e := newTestEditor(t, "")
-	e.rows, e.cols = 1, 20
+	e.rows, e.cols = 2, 20
 
 	out := runLoop(t, e, "ab\x17")
 

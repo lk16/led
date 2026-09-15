@@ -14,6 +14,7 @@ Read this file fully before any change. Decisions and their reasons live in `doc
 - Runs on Linux and macOS.
 - As few config options as possible.
 - Shows line numbers.
+- Shows a status bar with the path of the open file, with the home directory as `~`.
 - Hotkeys are ctrl + a key.
 - Dark mode only.
 - Highlights keywords for common languages.

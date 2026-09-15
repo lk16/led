@@ -325,3 +325,46 @@ func toLines(ss []string) [][]rune {
 	}
 	return lines
 }
+
+func TestShortPath(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		home string
+		want string
+	}{
+		{"file in the home directory", "/home/luuk/a.txt", "/home/luuk", "~/a.txt"},
+		{"file deeper in the home directory", "/home/luuk/p/a.txt", "/home/luuk", "~/p/a.txt"},
+		{"the home directory itself", "/home/luuk", "/home/luuk", "~"},
+		{"trailing slash on the home directory", "/home/luuk/a.txt", "/home/luuk/", "~/a.txt"},
+		{"file outside the home directory", "/etc/hosts", "/home/luuk", "/etc/hosts"},
+		{"sibling with the home directory as a prefix", "/home/luuk2/a.txt", "/home/luuk", "/home/luuk2/a.txt"},
+		{"relative path", "a.txt", "/home/luuk", "a.txt"},
+		{"unknown home directory", "/home/luuk/a.txt", "", "/home/luuk/a.txt"},
+		{"root as home directory", "/a.txt", "/", "/a.txt"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shortPath(tt.path, tt.home); got != tt.want {
+				t.Errorf("shortPath(%q, %q) = %q, want %q", tt.path, tt.home, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewEditorShortensHomeInName(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	path := filepath.Join(home, "a.txt")
+	e, err := newEditor(path)
+	if err != nil {
+		t.Fatalf("newEditor: %v", err)
+	}
+	if got, want := e.name, "~/a.txt"; got != want {
+		t.Errorf("name = %q, want %q", got, want)
+	}
+	if e.path != path {
+		t.Errorf("path = %q, want %q", e.path, path)
+	}
+}
