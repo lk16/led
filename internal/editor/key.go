@@ -1,8 +1,13 @@
 package editor
 
-import "bufio"
+import (
+	"bufio"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+)
 
-// A key is either a typed rune or one of the negative constants below.
+// A key is either a typed rune or one of the special keys below.
 type key rune
 
 const (
@@ -12,13 +17,29 @@ const (
 	keyBack  key = 0x7f
 )
 
+// Special keys sit above the Unicode range, so they can never be a typed rune.
 const (
-	keyUp key = -1 - iota
+	keyUp key = utf8.MaxRune + 1 + iota
 	keyDown
 	keyLeft
 	keyRight
 	keyUnknown
 )
+
+// Modifier bits, set on an arrow key, e.g. keyLeft|modCtrl. See docs/terminal.md.
+const (
+	modShift key = 1 << 24 << iota
+	modCtrl
+)
+
+// isArrow reports whether k is an arrow key, with or without modifiers.
+func (k key) isArrow() bool {
+	switch k &^ (modShift | modCtrl) {
+	case keyUp, keyDown, keyLeft, keyRight:
+		return true
+	}
+	return false
+}
 
 // readKey returns one key press. An escape sequence becomes a single key.
 func readKey(in *bufio.Reader) (key, error) {
@@ -38,19 +59,53 @@ func readKey(in *bufio.Reader) (key, error) {
 		return keyUnknown, nil
 	}
 
-	b, err = in.ReadByte()
-	if err != nil {
-		return 0, err
+	var params []byte
+	for {
+		if b, err = in.ReadByte(); err != nil {
+			return 0, err
+		}
+		if b >= '@' && b <= '~' {
+			return escapeKey(params, b), nil
+		}
+		params = append(params, b)
 	}
-	switch b {
+}
+
+// escapeKey turns the parameters and the final byte of an escape sequence into a key.
+func escapeKey(params []byte, final byte) key {
+	var k key
+	switch final {
 	case 'A':
-		return keyUp, nil
+		k = keyUp
 	case 'B':
-		return keyDown, nil
+		k = keyDown
 	case 'C':
-		return keyRight, nil
+		k = keyRight
 	case 'D':
-		return keyLeft, nil
+		k = keyLeft
+	default:
+		return keyUnknown
 	}
-	return keyUnknown, nil
+	return k | modifiers(params)
+}
+
+// modifiers reads the modifier parameter of an escape sequence. See docs/terminal.md.
+func modifiers(params []byte) key {
+	_, second, ok := strings.Cut(string(params), ";")
+	if !ok {
+		return 0
+	}
+	n, err := strconv.Atoi(second)
+	if err != nil || n < 1 {
+		return 0
+	}
+
+	var mods key
+	if (n-1)&1 != 0 {
+		mods |= modShift
+	}
+	if (n-1)&4 != 0 {
+		mods |= modCtrl
+	}
+	return mods
 }

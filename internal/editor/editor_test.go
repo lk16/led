@@ -210,6 +210,20 @@ func TestMove(t *testing.T) {
 		{"right", []string{"ab"}, 1, 0, keyRight, 2, 0},
 		{"right wraps to next line start", []string{"ab", "cd"}, 2, 0, keyRight, 0, 1},
 		{"right at end of buffer", []string{"ab"}, 2, 0, keyRight, 2, 0},
+		{"ctrl left to the start of the word", []string{"one two"}, 7, 0, keyLeft | modCtrl, 4, 0},
+		{"ctrl left from inside a word", []string{"one two"}, 6, 0, keyLeft | modCtrl, 4, 0},
+		{"ctrl left skips what is between words", []string{"one   two"}, 6, 0, keyLeft | modCtrl, 0, 0},
+		{"ctrl left over punctuation", []string{"a.b"}, 2, 0, keyLeft | modCtrl, 0, 0},
+		{"ctrl left from the line start wraps", []string{"ab", "cd"}, 0, 1, keyLeft | modCtrl, 2, 0},
+		{"ctrl left at the start of the buffer", []string{"ab"}, 0, 0, keyLeft | modCtrl, 0, 0},
+		{"ctrl right to the end of the word", []string{"one two"}, 0, 0, keyRight | modCtrl, 3, 0},
+		{"ctrl right from inside a word", []string{"one two"}, 1, 0, keyRight | modCtrl, 3, 0},
+		{"ctrl right skips what is between words", []string{"one   two"}, 3, 0, keyRight | modCtrl, 9, 0},
+		{"ctrl right over punctuation", []string{"a.b"}, 1, 0, keyRight | modCtrl, 3, 0},
+		{"ctrl right from the line end wraps", []string{"ab", "cd"}, 2, 0, keyRight | modCtrl, 0, 1},
+		{"ctrl right at the end of the buffer", []string{"ab"}, 2, 0, keyRight | modCtrl, 2, 0},
+		{"ctrl up moves like up", []string{"ab", "cd"}, 1, 1, keyUp | modCtrl, 1, 0},
+		{"ctrl down moves like down", []string{"ab", "cd"}, 1, 0, keyDown | modCtrl, 1, 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -524,6 +538,169 @@ func TestNewEditorPicksKeywordsByExtension(t *testing.T) {
 			}
 			if got := e.keywords != nil; got != tt.want {
 				t.Errorf("keywords set = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWordLeft(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		cx   int
+		want int
+	}{
+		{"start of line", "one two", 0, 0},
+		{"inside a word", "one two", 5, 4},
+		{"start of a word", "one two", 4, 0},
+		{"end of the line", "one two", 7, 4},
+		{"over spaces", "one   two", 6, 0},
+		{"over punctuation", "a(b)", 4, 2},
+		{"a word with digits and underscores", "x a_1", 5, 2},
+		{"letters outside ascii", "een twée", 8, 4},
+		{"only spaces", "   ", 3, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := wordLeft([]rune(tt.line), tt.cx); got != tt.want {
+				t.Errorf("wordLeft(%q, %d) = %d, want %d", tt.line, tt.cx, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWordRight(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		cx   int
+		want int
+	}{
+		{"start of line", "one two", 0, 3},
+		{"inside a word", "one two", 1, 3},
+		{"end of a word", "one two", 3, 7},
+		{"end of the line", "one two", 7, 7},
+		{"over spaces", "one   two", 3, 9},
+		{"over punctuation", "a(b)", 1, 3},
+		{"a word with digits and underscores", "a_1 x", 0, 3},
+		{"letters outside ascii", "twée een", 0, 4},
+		{"only spaces", "   ", 0, 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := wordRight([]rune(tt.line), tt.cx); got != tt.want {
+				t.Errorf("wordRight(%q, %d) = %d, want %d", tt.line, tt.cx, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSelectWithShiftArrows(t *testing.T) {
+	tests := []struct {
+		name          string
+		lines         []string
+		cx, cy        int
+		keys          []key
+		wantStart     position
+		wantEnd       position
+		wantSelecting bool
+	}{
+		{
+			name: "shift right selects the rune after the cursor", lines: []string{"abc"},
+			keys: []key{keyRight | modShift}, wantStart: position{0, 0}, wantEnd: position{0, 1}, wantSelecting: true,
+		},
+		{
+			name: "shift right twice selects two runes", lines: []string{"abc"},
+			keys:      []key{keyRight | modShift, keyRight | modShift},
+			wantStart: position{0, 0}, wantEnd: position{0, 2}, wantSelecting: true,
+		},
+		{
+			name: "shift left selects towards the start of the line", lines: []string{"abc"}, cx: 2,
+			keys: []key{keyLeft | modShift}, wantStart: position{0, 1}, wantEnd: position{0, 2}, wantSelecting: true,
+		},
+		{
+			name: "ctrl shift right selects a word", lines: []string{"one two"},
+			keys: []key{keyRight | modShift | modCtrl}, wantStart: position{0, 0}, wantEnd: position{0, 3}, wantSelecting: true,
+		},
+		{
+			name: "ctrl shift left selects a word back", lines: []string{"one two"}, cx: 7,
+			keys: []key{keyLeft | modShift | modCtrl}, wantStart: position{0, 4}, wantEnd: position{0, 7}, wantSelecting: true,
+		},
+		{
+			name: "shift down selects into the next line", lines: []string{"ab", "cd"}, cx: 1,
+			keys: []key{keyDown | modShift}, wantStart: position{0, 1}, wantEnd: position{1, 1}, wantSelecting: true,
+		},
+		{
+			name: "shift up selects into the previous line", lines: []string{"ab", "cd"}, cx: 1, cy: 1,
+			keys: []key{keyUp | modShift}, wantStart: position{0, 1}, wantEnd: position{1, 1}, wantSelecting: true,
+		},
+		{
+			name: "back at the anchor nothing is selected", lines: []string{"abc"},
+			keys: []key{keyRight | modShift, keyLeft | modShift}, wantStart: position{0, 0}, wantEnd: position{0, 0}, wantSelecting: true,
+		},
+		{
+			name: "an arrow without shift drops the selection", lines: []string{"abc"},
+			keys: []key{keyRight | modShift, keyRight}, wantStart: position{0, 2}, wantEnd: position{0, 2},
+		},
+		{
+			name: "typing drops the selection", lines: []string{"abc"},
+			keys: []key{keyRight | modShift, 'x'}, wantStart: position{0, 2}, wantEnd: position{0, 2},
+		},
+		{
+			name: "backspace drops the selection", lines: []string{"abc"},
+			keys: []key{keyRight | modShift, keyBack}, wantStart: position{0, 0}, wantEnd: position{0, 0},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{lines: toLines(tt.lines), cx: tt.cx, cy: tt.cy}
+			for i, k := range tt.keys {
+				if err := e.handleKey(k); err != nil {
+					t.Fatalf("key %d: %v", i, err)
+				}
+			}
+			start, end := e.selection()
+			if start != tt.wantStart || end != tt.wantEnd {
+				t.Errorf("selection() = %v..%v, want %v..%v", start, end, tt.wantStart, tt.wantEnd)
+			}
+			if e.selecting != tt.wantSelecting {
+				t.Errorf("selecting = %v, want %v", e.selecting, tt.wantSelecting)
+			}
+		})
+	}
+}
+
+func TestSelectionKeepsTheAnchorWhileShiftIsHeld(t *testing.T) {
+	e := &editor{lines: toLines([]string{"abcdef"}), cx: 3}
+	for _, k := range []key{keyRight | modShift, keyRight | modShift, keyLeft | modShift} {
+		if err := e.handleKey(k); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if want := (position{0, 3}); e.anchor != want {
+		t.Errorf("anchor = %v, want %v", e.anchor, want)
+	}
+	if e.cx != 4 {
+		t.Errorf("cx = %d, want 4", e.cx)
+	}
+}
+
+func TestPositionBefore(t *testing.T) {
+	tests := []struct {
+		name string
+		p, q position
+		want bool
+	}{
+		{"earlier row", position{0, 5}, position{1, 0}, true},
+		{"later row", position{1, 0}, position{0, 5}, false},
+		{"same row, earlier column", position{1, 1}, position{1, 2}, true},
+		{"same row, later column", position{1, 2}, position{1, 1}, false},
+		{"the same position", position{1, 1}, position{1, 1}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.p.before(tt.q); got != tt.want {
+				t.Errorf("%v.before(%v) = %v, want %v", tt.p, tt.q, got, tt.want)
 			}
 		})
 	}

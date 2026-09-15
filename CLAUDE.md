@@ -37,9 +37,14 @@ Anything not listed here or there is out of scope until asked for.
 - Every feature comes with tests. Every bug fix comes with a regression test.
 - A human reviews every change before it is merged into `main`. Keep diffs small.
 
-Run these before every commit. All must pass, and `gofmt -l .` must print nothing:
+Run the linters and all tests before every commit. Both must pass:
+
+    pre-commit run --all-files
+    go test ./...
+
+Without `pre-commit`, run the linters it wraps by hand. `gofmt -l .` must print nothing:
 
     gofmt -l .
     go vet ./...
     GOOS=darwin go vet ./...
-    go test ./...
+    golangci-lint run ./cmd/... ./internal/...

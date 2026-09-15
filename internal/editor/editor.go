@@ -6,20 +6,34 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
+// A position is a place in the buffer. Its fields are ordered as a line is read.
+type position struct {
+	y, x int
+}
+
+// before reports whether p comes earlier in the buffer than q.
+func (p position) before(q position) bool {
+	return p.y < q.y || p.y == q.y && p.x < q.x
+}
+
 type editor struct {
-	path     string
-	name     string          // path as shown in the status bar
-	keywords map[string]bool // keywords to highlight, nil for an unknown file type
-	lines    [][]rune
-	cx, cy   int // cursor column and row in the buffer
-	rowOff   int // first buffer row shown on screen
-	rows     int
-	cols     int
-	dirty    bool // buffer has edits that are not saved
-	prompt   bool // asking what to do with those edits
-	quit     bool
+	path      string
+	name      string          // path as shown in the status bar
+	keywords  map[string]bool // keywords to highlight, nil for an unknown file type
+	lines     [][]rune
+	cx, cy    int      // cursor column and row in the buffer
+	anchor    position // other end of the selection, only set while selecting
+	selecting bool     // shift + arrows are extending a selection
+	rowOff    int      // first buffer row shown on screen
+	rows      int
+	cols      int
+	dirty     bool // buffer has edits that are not saved
+	prompt    bool // asking what to do with those edits
+	quit      bool
 }
 
 func newEditor(path string) (*editor, error) {
@@ -64,10 +78,39 @@ func splitLines(data []byte) [][]rune {
 	return lines
 }
 
+// handleKey applies one key press. A shift + arrow selects from where the cursor
+// was, every other key drops the selection.
 func (e *editor) handleKey(k key) error {
 	if e.prompt {
 		return e.answerPrompt(k)
 	}
+	if k&modShift != 0 && !e.selecting {
+		e.anchor, e.selecting = e.cursor(), true
+	}
+	err := e.applyKey(k)
+	if k&modShift == 0 {
+		e.selecting = false
+	}
+	return err
+}
+
+func (e *editor) cursor() position {
+	return position{y: e.cy, x: e.cx}
+}
+
+// selection returns the start and the end of the selection, in buffer order.
+// They are equal when nothing is selected.
+func (e *editor) selection() (position, position) {
+	if !e.selecting {
+		return e.cursor(), e.cursor()
+	}
+	if e.anchor.before(e.cursor()) {
+		return e.anchor, e.cursor()
+	}
+	return e.cursor(), e.anchor
+}
+
+func (e *editor) applyKey(k key) error {
 	switch k {
 	case keyCtrlW:
 		if e.dirty {
@@ -81,10 +124,11 @@ func (e *editor) handleKey(k key) error {
 		e.splitLine()
 	case keyBack:
 		e.backspace()
-	case keyUp, keyDown, keyLeft, keyRight:
-		e.move(k)
 	default:
-		if k >= ' ' {
+		switch {
+		case k.isArrow():
+			e.move(k)
+		case k >= ' ' && k <= utf8.MaxRune:
 			e.insert(rune(k))
 		}
 	}
@@ -121,13 +165,14 @@ func (e *editor) save() error {
 	return nil
 }
 
+// move moves the cursor. Shift does not change where it lands, only what gets selected.
 func (e *editor) move(k key) {
-	switch k {
-	case keyUp:
+	switch k &^ modShift {
+	case keyUp, keyUp | modCtrl:
 		if e.cy > 0 {
 			e.cy--
 		}
-	case keyDown:
+	case keyDown, keyDown | modCtrl:
 		if e.cy < len(e.lines)-1 {
 			e.cy++
 		}
@@ -147,10 +192,52 @@ func (e *editor) move(k key) {
 			e.cy++
 			e.cx = 0
 		}
+	case keyLeft | modCtrl:
+		switch {
+		case e.cx > 0:
+			e.cx = wordLeft(e.lines[e.cy], e.cx)
+		case e.cy > 0:
+			e.cy--
+			e.cx = len(e.lines[e.cy])
+		}
+	case keyRight | modCtrl:
+		switch {
+		case e.cx < len(e.lines[e.cy]):
+			e.cx = wordRight(e.lines[e.cy], e.cx)
+		case e.cy < len(e.lines)-1:
+			e.cy++
+			e.cx = 0
+		}
 	}
 	if e.cx > len(e.lines[e.cy]) {
 		e.cx = len(e.lines[e.cy])
 	}
+}
+
+// wordLeft returns the column of the start of the word before cx.
+func wordLeft(line []rune, cx int) int {
+	for cx > 0 && !isWordRune(line[cx-1]) {
+		cx--
+	}
+	for cx > 0 && isWordRune(line[cx-1]) {
+		cx--
+	}
+	return cx
+}
+
+// wordRight returns the column just past the end of the word after cx.
+func wordRight(line []rune, cx int) int {
+	for cx < len(line) && !isWordRune(line[cx]) {
+		cx++
+	}
+	for cx < len(line) && isWordRune(line[cx]) {
+		cx++
+	}
+	return cx
+}
+
+func isWordRune(r rune) bool {
+	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 func (e *editor) insert(r rune) {

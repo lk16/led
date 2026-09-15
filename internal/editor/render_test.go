@@ -77,6 +77,25 @@ func TestRender(t *testing.T) {
 			want:  "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39ma\x1b[K\r\n" + statusBar("~/some/l", 8) + "\x1b[1;3H\x1b[?25h",
 		},
 		{
+			name:  "tabs are drawn as spaces up to the next tab stop",
+			lines: []string{"\tab"},
+			file:  "f.txt",
+			rows:  2,
+			cols:  20,
+			cx:    1,
+			want: "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39m        ab\x1b[K\r\n" +
+				statusBar("f.txt", 20) + "\x1b[1;11H\x1b[?25h",
+		},
+		{
+			name:  "a line with tabs is clipped by screen columns",
+			lines: []string{"\tabcdef"},
+			file:  "f.txt",
+			rows:  2,
+			cols:  12,
+			want: "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39m        ab\x1b[K\r\n" +
+				statusBar("f.txt", 12) + "\x1b[1;3H\x1b[?25h",
+		},
+		{
 			name:  "only the status bar fits",
 			lines: []string{"a"},
 			file:  "f.txt",
@@ -228,6 +247,222 @@ func TestRenderStatusColors(t *testing.T) {
 			e.renderStatus(&b)
 			if got := b.String(); got != tt.want {
 				t.Errorf("renderStatus() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExpandTabs(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{"no tabs", "ab", "ab"},
+		{"leading tab", "\tab", "        ab"},
+		{"tab after text", "ab\tc", "ab      c"},
+		{"tab on a tab stop", "abcdefgh\tc", "abcdefgh        c"},
+		{"two tabs", "\t\ta", "                a"},
+		{"tab counts runes not bytes", "é\ta", "é       a"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := string(expandTabs([]rune(tt.line))); got != tt.want {
+				t.Errorf("expandTabs(%q) = %q, want %q", tt.line, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCursorColumn(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		cx   int
+		want int
+	}{
+		{"without tabs", "abc", 2, 2},
+		{"before a tab", "\tabc", 0, 0},
+		{"after a tab", "\tabc", 1, 8},
+		{"after a tab and text", "\tabc", 3, 10},
+		{"past the end of the line", "ab", 5, 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{lines: toLines([]string{tt.line}), cx: tt.cx}
+			if got := e.cursorColumn(); got != tt.want {
+				t.Errorf("cursorColumn() with line %q and cx=%d = %d, want %d", tt.line, tt.cx, got, tt.want)
+			}
+		})
+	}
+}
+
+// visibleRows returns what render wrote per screen row, without the escape codes.
+func visibleRows(out string) []string {
+	var rows []string
+	var row strings.Builder
+	for i := 0; i < len(out); {
+		switch {
+		case strings.HasPrefix(out[i:], "\x1b["):
+			for i += 2; i < len(out) && out[i] < '@' || out[i] > '~'; i++ {
+			}
+			i++
+		case strings.HasPrefix(out[i:], "\r\n"):
+			rows = append(rows, row.String())
+			row.Reset()
+			i += 2
+		default:
+			row.WriteByte(out[i])
+			i++
+		}
+	}
+	return append(rows, row.String())
+}
+
+// A tab moves the cursor without erasing and can push a row past the screen width,
+// which left old text on screen while scrolling through an indented file.
+func TestRenderScrollingIndentedFileFillsEveryRow(t *testing.T) {
+	lines := []string{"func main() {", "\tfor i := range 3 {", "\t\tprintln(i, \"a long line of text\")", "\t}", "}"}
+	e := &editor{name: "f.go", lines: toLines(lines), rows: 4, cols: 24, keywords: keywordsFor("f.go")}
+	for e.cy = 0; e.cy < len(e.lines); e.cy++ {
+		var b bytes.Buffer
+		if err := e.render(&b); err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		for i, row := range visibleRows(b.String()) {
+			if strings.ContainsRune(row, '\t') {
+				t.Errorf("cy=%d row %d = %q, want no tab", e.cy, i, row)
+			}
+			if got := len([]rune(row)); got > e.cols {
+				t.Errorf("cy=%d row %d is %d columns wide, want at most %d: %q", e.cy, i, got, e.cols, row)
+			}
+		}
+	}
+}
+
+func TestRenderLineSelection(t *testing.T) {
+	tests := []struct {
+		name      string
+		lines     []string
+		file      string
+		anchor    position
+		cx, cy    int
+		row       int
+		width     int
+		selecting bool
+		want      string
+	}{
+		{
+			name: "nothing selected", lines: []string{"abcd"},
+			row: 0, width: 20, want: "abcd",
+		},
+		{
+			name: "part of the line", lines: []string{"abcd"}, selecting: true,
+			anchor: position{0, 1}, cx: 3, row: 0, width: 20, want: "a" + selBg + "bc" + noBg + "d",
+		},
+		{
+			name: "selected towards the start of the line", lines: []string{"abcd"}, selecting: true,
+			anchor: position{0, 3}, cx: 1, row: 0, width: 20, want: "a" + selBg + "bc" + noBg + "d",
+		},
+		{
+			name: "the first row of a selection runs to the end of the line", lines: []string{"ab", "cd"}, selecting: true,
+			anchor: position{0, 1}, cx: 1, cy: 1, row: 0, width: 20, want: "a" + selBg + "b" + noBg,
+		},
+		{
+			name: "the last row of a selection starts at the line start", lines: []string{"ab", "cd"}, selecting: true,
+			anchor: position{0, 1}, cx: 1, cy: 1, row: 1, width: 20, want: selBg + "c" + noBg + "d",
+		},
+		{
+			name: "a row between the ends is selected whole", lines: []string{"ab", "cd", "ef"}, selecting: true,
+			anchor: position{0, 1}, cx: 1, cy: 2, row: 1, width: 20, want: selBg + "cd" + noBg,
+		},
+		{
+			name: "a row outside the selection", lines: []string{"ab", "cd"}, selecting: true,
+			anchor: position{1, 0}, cx: 1, cy: 1, row: 0, width: 20, want: "ab",
+		},
+		{
+			name: "tabs are selected as the spaces they are drawn as", lines: []string{"\tab"}, selecting: true,
+			anchor: position{0, 0}, cx: 2, row: 0, width: 20, want: selBg + "        a" + noBg + "b",
+		},
+		{
+			name: "a selection past the screen width is clipped", lines: []string{"abcdef"}, selecting: true,
+			anchor: position{0, 1}, cx: 6, row: 0, width: 3, want: "a" + selBg + "bc" + noBg,
+		},
+		{
+			name: "keywords in a selection stay colored", lines: []string{"func x"}, file: "f.go", selecting: true,
+			anchor: position{0, 0}, cx: 4, row: 0, width: 20,
+			want: selBg + keywordColor + "func" + reset + noBg + " x",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{
+				lines: toLines(tt.lines), keywords: keywordsFor(tt.file),
+				anchor: tt.anchor, cx: tt.cx, cy: tt.cy, selecting: tt.selecting,
+			}
+			if got := e.renderLine(tt.row, tt.width); got != tt.want {
+				t.Errorf("renderLine(%d, %d) = %q, want %q", tt.row, tt.width, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenderSelectedText(t *testing.T) {
+	e := &editor{name: "f.txt", lines: toLines([]string{"abcd"}), rows: 2, cols: 20, anchor: position{0, 1}, cx: 3, selecting: true}
+	var b bytes.Buffer
+	if err := e.render(&b); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	want := "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39ma" + selBg + "bc" + noBg + "d\x1b[K\r\n" +
+		statusBar("f.txt", 20) + "\x1b[1;6H\x1b[?25h"
+	if got := b.String(); got != want {
+		t.Errorf("render =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestSelectedColumns(t *testing.T) {
+	tests := []struct {
+		name             string
+		lines            []string
+		anchor           position
+		cx, cy           int
+		selecting        bool
+		row              int
+		width            int
+		wantFrom, wantTo int
+	}{
+		{name: "nothing selected", lines: []string{"abcd"}, row: 0, width: 4},
+		{
+			name: "part of a row", lines: []string{"abcd"}, selecting: true,
+			anchor: position{0, 1}, cx: 3, row: 0, width: 4, wantFrom: 1, wantTo: 3,
+		},
+		{
+			name: "a row above the selection", lines: []string{"ab", "cd"}, selecting: true,
+			anchor: position{1, 0}, cx: 1, cy: 1, row: 0, width: 2,
+		},
+		{
+			name: "a row below the selection", lines: []string{"ab", "cd"}, selecting: true,
+			anchor: position{0, 0}, cx: 1, row: 1, width: 2,
+		},
+		{
+			name: "an empty selection", lines: []string{"abcd"}, selecting: true,
+			anchor: position{0, 2}, cx: 2, row: 0, width: 4,
+		},
+		{
+			name: "the ends are clipped to the width", lines: []string{"abcdef"}, selecting: true,
+			anchor: position{0, 1}, cx: 6, row: 0, width: 3, wantFrom: 1, wantTo: 3,
+		},
+		{
+			name: "a start past the width selects nothing", lines: []string{"abcdef"}, selecting: true,
+			anchor: position{0, 4}, cx: 6, row: 0, width: 3, wantFrom: 3, wantTo: 3,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{lines: toLines(tt.lines), anchor: tt.anchor, cx: tt.cx, cy: tt.cy, selecting: tt.selecting}
+			from, to := e.selectedColumns(tt.row, tt.width)
+			if from != tt.wantFrom || to != tt.wantTo {
+				t.Errorf("selectedColumns(%d, %d) = %d, %d, want %d, %d", tt.row, tt.width, from, to, tt.wantFrom, tt.wantTo)
 			}
 		})
 	}
