@@ -24,7 +24,7 @@ func TestLoopTypesAndQuits(t *testing.T) {
 	e := newTestEditor(t, "")
 	e.rows, e.cols = 3, 20
 
-	runLoop(t, e, "hi\rthere\x17")
+	runLoop(t, e, "hi\rthere\x17q")
 
 	if got, want := lineStrings(e.lines), []string{"hi", "there"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("lines = %q, want %q", got, want)
@@ -53,11 +53,11 @@ func TestLoopRedrawsAfterEveryKey(t *testing.T) {
 	e := newTestEditor(t, "")
 	e.rows, e.cols = 2, 20
 
-	out := runLoop(t, e, "ab\x17")
+	out := runLoop(t, e, "ab\x17q")
 
-	// One draw before each of the three keys.
-	if got := strings.Count(out, "\x1b[?25l"); got != 3 {
-		t.Errorf("draws = %d, want 3", got)
+	// One draw before each of the four keys.
+	if got := strings.Count(out, "\x1b[?25l"); got != 4 {
+		t.Errorf("draws = %d, want 4", got)
 	}
 	if !strings.Contains(out, "\x1b[90m1 \x1b[39mab") {
 		t.Errorf("last draw does not show the typed text: %q", out)
@@ -75,6 +75,55 @@ func TestLoopStopsOnEOF(t *testing.T) {
 	}
 	if e.quit {
 		t.Error("quit = true, want false")
+	}
+}
+
+func TestLoopAsksBeforeLosingChanges(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       string
+		wantFile string
+	}{
+		{name: "enter saves", in: "hi\x17\r", wantFile: "hi\n"},
+		{name: "q discards", in: "hi\x17q", wantFile: "old\n"},
+		{name: "typing does not answer", in: "hi\x17xq", wantFile: "old\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newTestEditor(t, "old\n")
+			e.rows, e.cols = 3, 60
+			e.lines = toLines([]string{""})
+
+			out := runLoop(t, e, tt.in)
+
+			if !e.quit {
+				t.Error("quit = false, want true")
+			}
+			if !strings.Contains(out, alert+unsavedPrompt) {
+				t.Error("the prompt was never drawn")
+			}
+			data, err := os.ReadFile(e.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := string(data); got != tt.wantFile {
+				t.Errorf("file = %q, want %q", got, tt.wantFile)
+			}
+		})
+	}
+}
+
+func TestLoopClosesWithoutAskingWhenSaved(t *testing.T) {
+	e := newTestEditor(t, "old\n")
+	e.rows, e.cols = 3, 60
+
+	out := runLoop(t, e, "\x17")
+
+	if !e.quit {
+		t.Error("quit = false, want true")
+	}
+	if strings.Contains(out, unsavedPrompt) {
+		t.Error("the prompt was drawn for an unchanged file")
 	}
 }
 

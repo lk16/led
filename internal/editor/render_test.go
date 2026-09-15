@@ -99,6 +99,30 @@ func TestRender(t *testing.T) {
 	}
 }
 
+func TestRenderPromptStatusBar(t *testing.T) {
+	e := &editor{name: "f.txt", lines: toLines([]string{"a"}), rows: 2, cols: 60, dirty: true, prompt: true}
+	var b bytes.Buffer
+	if err := e.render(&b); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	want := "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39ma\x1b[K\r\n" +
+		alert + unsavedPrompt + strings.Repeat(" ", 60-len(unsavedPrompt)) + noAlert + "\x1b[1;3H\x1b[?25h"
+	if got := b.String(); got != want {
+		t.Errorf("render =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestRenderPromptIsClippedToTheScreenWidth(t *testing.T) {
+	e := &editor{name: "f.txt", lines: toLines([]string{"a"}), rows: 2, cols: 8, prompt: true}
+	var b bytes.Buffer
+	if err := e.render(&b); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if want := alert + unsavedPrompt[:8] + noAlert; !strings.Contains(b.String(), want) {
+		t.Errorf("render = %q, want it to contain %q", b.String(), want)
+	}
+}
+
 func TestRenderScrolledView(t *testing.T) {
 	e := &editor{name: "f.txt", lines: toLines([]string{"a", "b", "c"}), rows: 2, cols: 20, cy: 2}
 	var b bytes.Buffer

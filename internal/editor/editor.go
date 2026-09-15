@@ -16,6 +16,8 @@ type editor struct {
 	rowOff int // first buffer row shown on screen
 	rows   int
 	cols   int
+	dirty  bool // buffer has edits that are not saved
+	prompt bool // asking what to do with those edits
 	quit   bool
 }
 
@@ -54,8 +56,15 @@ func splitLines(data []byte) [][]rune {
 }
 
 func (e *editor) handleKey(k key) error {
+	if e.prompt {
+		return e.answerPrompt(k)
+	}
 	switch k {
 	case keyCtrlW:
+		if e.dirty {
+			e.prompt = true
+			return nil
+		}
 		e.quit = true
 	case keyCtrlS:
 		return e.save()
@@ -73,13 +82,34 @@ func (e *editor) handleKey(k key) error {
 	return nil
 }
 
+// answerPrompt handles the unsaved changes question. Other keys leave it up.
+func (e *editor) answerPrompt(k key) error {
+	switch k {
+	case keyEnter:
+		if err := e.save(); err != nil {
+			return err
+		}
+	case 'q':
+		// Quit and lose the changes.
+	default:
+		return nil
+	}
+	e.prompt = false
+	e.quit = true
+	return nil
+}
+
 func (e *editor) save() error {
 	var b strings.Builder
 	for _, line := range e.lines {
 		b.WriteString(string(line))
 		b.WriteByte('\n')
 	}
-	return os.WriteFile(e.path, []byte(b.String()), 0o644)
+	if err := os.WriteFile(e.path, []byte(b.String()), 0o644); err != nil {
+		return err
+	}
+	e.dirty = false
+	return nil
 }
 
 func (e *editor) move(k key) {
@@ -120,6 +150,7 @@ func (e *editor) insert(r rune) {
 	line[e.cx] = r
 	e.lines[e.cy] = line
 	e.cx++
+	e.dirty = true
 }
 
 func (e *editor) splitLine() {
@@ -133,6 +164,7 @@ func (e *editor) splitLine() {
 
 	e.cy++
 	e.cx = 0
+	e.dirty = true
 }
 
 func (e *editor) backspace() {
@@ -141,6 +173,7 @@ func (e *editor) backspace() {
 		copy(line[e.cx-1:], line[e.cx:])
 		e.lines[e.cy] = line[:len(line)-1]
 		e.cx--
+		e.dirty = true
 		return
 	}
 	if e.cy == 0 {
@@ -152,4 +185,5 @@ func (e *editor) backspace() {
 	e.lines[e.cy-1] = append(prev, e.lines[e.cy]...)
 	e.lines = append(e.lines[:e.cy], e.lines[e.cy+1:]...)
 	e.cy--
+	e.dirty = true
 }

@@ -368,3 +368,142 @@ func TestNewEditorShortensHomeInName(t *testing.T) {
 		t.Errorf("path = %q, want %q", e.path, path)
 	}
 }
+
+func TestEditsMarkTheBufferDirty(t *testing.T) {
+	tests := []struct {
+		name      string
+		lines     []string
+		cx, cy    int
+		k         key
+		wantDirty bool
+	}{
+		{name: "typing", lines: []string{"ab"}, cx: 1, k: 'x', wantDirty: true},
+		{name: "enter", lines: []string{"ab"}, cx: 1, k: keyEnter, wantDirty: true},
+		{name: "backspace", lines: []string{"ab"}, cx: 1, k: keyBack, wantDirty: true},
+		{name: "backspace joining lines", lines: []string{"ab", "cd"}, cy: 1, k: keyBack, wantDirty: true},
+		{name: "backspace at the start of the buffer", lines: []string{"ab"}, k: keyBack},
+		{name: "moving", lines: []string{"ab"}, cx: 1, k: keyLeft},
+		{name: "unknown key", lines: []string{"ab"}, cx: 1, k: keyUnknown},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{lines: toLines(tt.lines), cx: tt.cx, cy: tt.cy}
+			if err := e.handleKey(tt.k); err != nil {
+				t.Fatalf("handleKey: %v", err)
+			}
+			if e.dirty != tt.wantDirty {
+				t.Errorf("dirty = %v, want %v", e.dirty, tt.wantDirty)
+			}
+		})
+	}
+}
+
+func TestSaveClearsDirty(t *testing.T) {
+	e := newTestEditor(t, "a\n")
+	if err := e.handleKey('x'); err != nil {
+		t.Fatalf("handleKey: %v", err)
+	}
+	if !e.dirty {
+		t.Fatal("dirty = false after an edit, want true")
+	}
+	if err := e.handleKey(keyCtrlS); err != nil {
+		t.Fatalf("handleKey: %v", err)
+	}
+	if e.dirty {
+		t.Error("dirty = true after a save, want false")
+	}
+}
+
+func TestFailedSaveKeepsDirty(t *testing.T) {
+	e := &editor{path: filepath.Join(t.TempDir(), "missing", "file.txt"), lines: toLines([]string{"a"}), dirty: true}
+	if err := e.save(); err == nil {
+		t.Fatal("save to an invalid path: got nil error, want an error")
+	}
+	if !e.dirty {
+		t.Error("dirty = false after a failed save, want true")
+	}
+}
+
+func TestCloseWithoutChanges(t *testing.T) {
+	e := newTestEditor(t, "a\n")
+	if err := e.handleKey(keyCtrlW); err != nil {
+		t.Fatalf("handleKey: %v", err)
+	}
+	if e.prompt {
+		t.Error("prompt = true, want false")
+	}
+	if !e.quit {
+		t.Error("quit = false, want true")
+	}
+}
+
+func TestCloseWithChangesAsks(t *testing.T) {
+	e := newTestEditor(t, "a\n")
+	e.dirty = true
+	if err := e.handleKey(keyCtrlW); err != nil {
+		t.Fatalf("handleKey: %v", err)
+	}
+	if !e.prompt {
+		t.Error("prompt = false, want true")
+	}
+	if e.quit {
+		t.Error("quit = true, want false")
+	}
+}
+
+func TestAnswerPrompt(t *testing.T) {
+	tests := []struct {
+		name       string
+		k          key
+		wantQuit   bool
+		wantPrompt bool
+		wantFile   string
+	}{
+		{name: "enter saves and quits", k: keyEnter, wantQuit: true, wantFile: "changed\n"},
+		{name: "q discards and quits", k: 'q', wantQuit: true, wantFile: "old\n"},
+		{name: "any other key keeps asking", k: 'x', wantPrompt: true, wantFile: "old\n"},
+		{name: "ctrl w keeps asking", k: keyCtrlW, wantPrompt: true, wantFile: "old\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newTestEditor(t, "old\n")
+			e.lines = toLines([]string{"changed"})
+			e.dirty, e.prompt = true, true
+
+			if err := e.handleKey(tt.k); err != nil {
+				t.Fatalf("handleKey: %v", err)
+			}
+			if e.quit != tt.wantQuit {
+				t.Errorf("quit = %v, want %v", e.quit, tt.wantQuit)
+			}
+			if e.prompt != tt.wantPrompt {
+				t.Errorf("prompt = %v, want %v", e.prompt, tt.wantPrompt)
+			}
+			if got, want := lineStrings(e.lines), []string{"changed"}; !reflect.DeepEqual(got, want) {
+				t.Errorf("lines = %q, want %q", got, want)
+			}
+			data, err := os.ReadFile(e.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := string(data); got != tt.wantFile {
+				t.Errorf("file = %q, want %q", got, tt.wantFile)
+			}
+		})
+	}
+}
+
+func TestAnswerPromptFailedSaveDoesNotQuit(t *testing.T) {
+	e := &editor{
+		path:   filepath.Join(t.TempDir(), "missing", "file.txt"),
+		lines:  toLines([]string{"a"}),
+		dirty:  true,
+		prompt: true,
+	}
+	if err := e.handleKey(keyEnter); err == nil {
+		t.Fatal("handleKey(keyEnter) with a failing save: got nil error, want an error")
+	}
+	if e.quit {
+		t.Error("quit = true, want false")
+	}
+}

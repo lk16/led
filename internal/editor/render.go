@@ -12,7 +12,11 @@ const (
 	reset    = "\x1b[39m"
 	invert   = "\x1b[7m"
 	noInvert = "\x1b[27m"
+	alert    = "\x1b[41m"
+	noAlert  = "\x1b[49m"
 )
+
+const unsavedPrompt = "Unsaved changes: Enter saves, q discards."
 
 // render draws the whole screen in one write.
 func (e *editor) render(w io.Writer) error {
@@ -44,7 +48,11 @@ func (e *editor) textRows() int {
 
 // renderStatus draws the status bar over the whole width of the last row.
 func (e *editor) renderStatus(b *bytes.Buffer) {
-	fmt.Fprintf(b, "%s%-*s%s", invert, e.cols, clip([]rune(e.name), e.cols), noInvert)
+	on, off, text := invert, noInvert, e.name
+	if e.prompt {
+		on, off, text = alert, noAlert, unsavedPrompt
+	}
+	fmt.Fprintf(b, "%s%-*s%s", on, e.cols, clip([]rune(text), e.cols), off)
 }
 
 func (e *editor) scroll() {
