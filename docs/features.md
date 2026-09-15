@@ -4,6 +4,6 @@
 - Shows line numbers.
 - Shows a status bar with the path of the open file, with the home directory as `~`.
 - Asks what to do with unsaved changes before closing.
-- Highlights keywords for common languages. See [highlighting.md](highlighting.md).
+- Highlights keywords for Go, JavaScript, Python and Rust. See [highlighting.md](highlighting.md).
 - Hotkeys are ctrl + a key.
 - Dark mode only.

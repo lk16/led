@@ -27,7 +27,8 @@ func (e *editor) render(w io.Writer) error {
 	b.WriteString("\x1b[?25l\x1b[H")
 	for i := range e.textRows() {
 		if row := e.rowOff + i; row < len(e.lines) {
-			fmt.Fprintf(&b, "%s%*d %s%s", dim, numWidth, row+1, reset, clip(e.lines[row], e.cols-gutter))
+			text := highlight(clip(e.lines[row], e.cols-gutter), e.keywords)
+			fmt.Fprintf(&b, "%s%*d %s%s", dim, numWidth, row+1, reset, text)
 		} else {
 			b.WriteString(dim + "~" + reset)
 		}

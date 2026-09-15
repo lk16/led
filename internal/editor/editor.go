@@ -9,16 +9,17 @@ import (
 )
 
 type editor struct {
-	path   string
-	name   string // path as shown in the status bar
-	lines  [][]rune
-	cx, cy int // cursor column and row in the buffer
-	rowOff int // first buffer row shown on screen
-	rows   int
-	cols   int
-	dirty  bool // buffer has edits that are not saved
-	prompt bool // asking what to do with those edits
-	quit   bool
+	path     string
+	name     string          // path as shown in the status bar
+	keywords map[string]bool // keywords to highlight, nil for an unknown file type
+	lines    [][]rune
+	cx, cy   int // cursor column and row in the buffer
+	rowOff   int // first buffer row shown on screen
+	rows     int
+	cols     int
+	dirty    bool // buffer has edits that are not saved
+	prompt   bool // asking what to do with those edits
+	quit     bool
 }
 
 func newEditor(path string) (*editor, error) {
@@ -27,7 +28,15 @@ func newEditor(path string) (*editor, error) {
 		return nil, err
 	}
 	home, _ := os.UserHomeDir()
-	return &editor{path: path, name: shortPath(path, home), lines: splitLines(data), rows: 24, cols: 80}, nil
+	e := &editor{
+		path:     path,
+		name:     shortPath(path, home),
+		keywords: keywordsFor(path),
+		lines:    splitLines(data),
+		rows:     24,
+		cols:     80,
+	}
+	return e, nil
 }
 
 // shortPath replaces a leading home directory with "~".
