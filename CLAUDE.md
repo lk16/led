@@ -14,6 +14,8 @@ Read this file fully before any change. Decisions and their reasons live in `doc
 - Runs on Linux and macOS.
 - As few config options as possible.
 - Shows line numbers.
+- Shows a status bar with the path of the open file, with the home directory as `~`.
+- Asks what to do with unsaved changes before closing.
 - Hotkeys are ctrl + a key.
 - Dark mode only.
 - Highlights keywords for common languages.
@@ -67,14 +69,3 @@ Run these before every commit. All must pass, and `gofmt -l .` must print nothin
 
 - Work in small steps. One change per commit.
 - A human reviews every change before it is merged into `main`. Keep diffs small.
-
-## First build
-
-Build the bare minimum and nothing more:
-
-- `go run cmd/main.go foo.txt` opens the editor on `foo.txt`.
-- Typing updates the screen.
-- Ctrl+S saves the file.
-- Ctrl+W closes the editor.
-
-Exception for this first build only: no tests. Every later change follows [Tests](#tests).
