@@ -9,6 +9,7 @@
   "kit": ".box/kit",
   "template": "",
   "required_mounts": {
-    "go_toolchain": "a Linux Go install for this machine's architecture, what `go env GOROOT` prints, at or above the version in go.mod -- a macOS GOROOT will not run in the sandbox"
+    "go_toolchain": "a Linux Go install for this machine's architecture, what `go env GOROOT` prints, at or above the version in go.mod -- a macOS GOROOT will not run in the sandbox",
+    "local_bin": "~/.local/bin, holding a Linux golangci-lint for this machine's architecture -- a macOS binary will not run in the sandbox"
   }
 }

@@ -29,3 +29,16 @@ setup:
       description: >-
         Put the mounted host Go toolchain on PATH. go resolves the symlink to find
         its GOROOT, so the standard library comes from the mount too.
+    - command:
+        - "sh"
+        - "-c"
+        - |
+          for mount in $(grep " virtiofs " /proc/mounts | cut -d" " -f2); do
+            if [ -x "$mount/golangci-lint" ]; then
+              sudo ln -sf "$mount/golangci-lint" /usr/local/bin/golangci-lint
+              break
+            fi
+          done
+      description: >-
+        Put golangci-lint from the mounted host ~/.local/bin on PATH, for the
+        pre-commit checks. The mount is found by content, like the Go toolchain.
