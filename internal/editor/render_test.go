@@ -105,6 +105,31 @@ func TestRender(t *testing.T) {
 			cols:  8,
 			want:  "\x1b[?25l\x1b[H" + statusBar("f.txt", 8) + "\x1b[1;3H\x1b[?25h",
 		},
+		{
+			name:  "a screen with no rows at all",
+			lines: []string{"a"},
+			file:  "f.txt",
+			rows:  0,
+			cols:  8,
+			want:  "\x1b[?25l\x1b[H" + statusBar("f.txt", 8) + "\x1b[1;3H\x1b[?25h",
+		},
+		{
+			name:  "a screen of no rows and no columns",
+			lines: []string{"a"},
+			file:  "f.txt",
+			rows:  0,
+			cols:  0,
+			want:  "\x1b[?25l\x1b[H" + statusBg + noBg + "\x1b[1;0H\x1b[?25h",
+		},
+		{
+			name:  "a screen narrower than the line numbers",
+			lines: []string{"abc"},
+			file:  "f.txt",
+			rows:  2,
+			cols:  1,
+			want: "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39m\x1b[K\r\n" +
+				statusBg + "f" + noBg + "\x1b[1;1H\x1b[?25h",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -545,6 +570,7 @@ func TestRenderLineSelection(t *testing.T) {
 		cx, cy    int
 		row       int
 		width     int
+		colOff    int
 		selecting bool
 		want      string
 	}{
@@ -585,6 +611,14 @@ func TestRenderLineSelection(t *testing.T) {
 			anchor: position{0, 1}, cx: 6, row: 0, width: 3, want: "a" + selBg + "bc" + noBg,
 		},
 		{
+			name: "a selection that starts left of the view fills from the first column", lines: []string{"abcdef"},
+			selecting: true, anchor: position{0, 1}, cx: 5, colOff: 2, row: 0, width: 3, want: selBg + "cde" + noBg,
+		},
+		{
+			name: "a selection that ends left of the view leaves the row plain", lines: []string{"abcdef"},
+			selecting: true, anchor: position{0, 0}, cx: 1, colOff: 3, row: 0, width: 3, want: "def",
+		},
+		{
 			name: "keywords in a selection stay colored", lines: []string{"func x"}, file: "f.go", selecting: true,
 			anchor: position{0, 0}, cx: 4, row: 0, width: 20,
 			want: selBg + keywordColor + "func" + reset + noBg + " x",
@@ -593,7 +627,7 @@ func TestRenderLineSelection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := &editor{
-				lines: toLines(tt.lines), lang: languageFor(tt.file),
+				lines: toLines(tt.lines), lang: languageFor(tt.file), colOff: tt.colOff,
 				anchor: tt.anchor, cx: tt.cx, cy: tt.cy, selecting: tt.selecting,
 			}
 			if got := e.renderLine(tt.row, tt.width); got != tt.want {
