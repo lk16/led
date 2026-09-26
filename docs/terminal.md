@@ -15,6 +15,12 @@ Plain ANSI escape codes. No TUI library like tcell or bubbletea.
 - No dependency.
 - Tests compare the output as plain bytes, without a real terminal.
 
+## Size
+
+led asks the terminal how many rows and columns it has with a `TIOCGWINSZ` ioctl,
+at startup and again on every `SIGWINCH`. A terminal sends that signal when it is
+resized. When the ioctl fails, led keeps the size it drew at before.
+
 ## Keys
 
 An arrow key with ctrl or shift arrives as an escape sequence with a modifier

@@ -35,10 +35,12 @@ type editor struct {
 	colOff       int         // first screen column of a line shown on screen
 	rows         int
 	cols         int
-	alert        string // error shown in the status bar, empty for none
-	dirty        bool   // buffer has edits that are not saved
-	finalNewline bool   // the file ends with a newline, so a save writes one
-	prompt       bool   // asking what to do with those edits
+	resized      <-chan os.Signal                   // the terminal was resized
+	size         func() (rows, cols int, err error) // size of the terminal
+	alert        string                             // error shown in the status bar, empty for none
+	dirty        bool                               // buffer has edits that are not saved
+	finalNewline bool                               // the file ends with a newline, so a save writes one
+	prompt       bool                               // asking what to do with those edits
 	quit         bool
 }
 

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/lk16/led/internal/terminal"
@@ -37,9 +39,13 @@ func Run(path string) error {
 	}
 	defer func() { _ = term.Restore() }()
 
-	if rows, cols, err := terminal.Size(int(os.Stdout.Fd())); err == nil {
-		e.rows, e.cols = rows, cols
-	}
+	resized := make(chan os.Signal, 1)
+	signal.Notify(resized, syscall.SIGWINCH)
+	defer signal.Stop(resized)
+
+	e.resized = resized
+	e.size = func() (int, int, error) { return terminal.Size(int(os.Stdout.Fd())) }
+	e.readSize()
 
 	out := bufio.NewWriter(os.Stdout)
 	defer func() {
@@ -72,8 +78,16 @@ func readKeys(in *bufio.Reader) <-chan keyPress {
 	return keys
 }
 
-// loop draws the screen and handles keys until the user closes the editor. It
-// also redraws when an error in the status bar has been up long enough.
+// readSize takes the screen size from the terminal, and keeps the old one on error.
+func (e *editor) readSize() {
+	if rows, cols, err := e.size(); err == nil {
+		e.rows, e.cols = rows, cols
+	}
+}
+
+// loop draws the screen and handles keys until the user closes the editor. It also
+// redraws when the terminal is resized and when an error in the status bar has
+// been up long enough.
 func (e *editor) loop(in *bufio.Reader, out *bufio.Writer) error {
 	keys := readKeys(in)
 	var alertOver <-chan time.Time
@@ -101,6 +115,8 @@ func (e *editor) loop(in *bufio.Reader, out *bufio.Writer) error {
 			if e.alert != alert {
 				alertOver = time.After(alertTimeout)
 			}
+		case <-e.resized:
+			e.readSize()
 		case <-alertOver:
 			e.alert, alertOver = "", nil
 		}

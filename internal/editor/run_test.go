@@ -2,11 +2,13 @@ package editor
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -49,6 +51,54 @@ func runLoopInBackground(e *editor, in io.Reader, out io.Writer) <-chan error {
 	done := make(chan error, 1)
 	go func() { done <- e.loop(bufio.NewReader(in), bufio.NewWriter(out)) }()
 	return done
+}
+
+func TestReadSize(t *testing.T) {
+	tests := []struct {
+		name     string
+		size     func() (int, int, error)
+		wantRows int
+		wantCols int
+	}{
+		{"the size of the terminal", func() (int, int, error) { return 5, 30, nil }, 5, 30},
+		{"an error keeps the old size", func() (int, int, error) { return 0, 0, errors.New("no size") }, 2, 40},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{rows: 2, cols: 40, size: tt.size}
+			e.readSize()
+			if e.rows != tt.wantRows || e.cols != tt.wantCols {
+				t.Errorf("size = %dx%d, want %dx%d", e.rows, e.cols, tt.wantRows, tt.wantCols)
+			}
+		})
+	}
+}
+
+func TestLoopRedrawsAfterAResize(t *testing.T) {
+	e := newTestEditor(t, "a\n")
+	e.name = "f.txt"
+	e.rows, e.cols = 2, 40
+	resized := make(chan os.Signal, 1)
+	e.resized = resized
+	e.size = func() (int, int, error) { return 5, 30, nil }
+	keys, writeKey := io.Pipe()
+	drawn := make(frames, 8)
+	done := runLoopInBackground(e, keys, drawn)
+
+	resized <- syscall.SIGWINCH
+	drawn.waitFor(t, "at the new size", func(frame string) bool {
+		return strings.Contains(frame, statusBar("f.txt", 30)) && strings.Count(frame, "\r\n") == 4
+	})
+
+	if _, err := writeKey.Write([]byte{0x17}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("loop: %v", err)
+	}
+	if err := writeKey.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestLoopClearsTheAlertWithoutAKeyPress(t *testing.T) {

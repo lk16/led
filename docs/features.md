@@ -17,6 +17,7 @@
 - Delete removes the rune under the cursor. At the end of a line it pulls the next one up.
 - Shift + arrows select text. With ctrl they select a word at a time. Shift works the same with home, end and page up or down.
 - Nothing uses the selection yet. There is no cut, copy or paste.
+- Draws at the size of the terminal, and follows it when the terminal is resized. See [terminal.md](terminal.md).
 - Dark mode only.
 
 What led gets wrong is in [bugs.md](bugs.md).
