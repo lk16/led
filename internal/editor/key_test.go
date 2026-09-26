@@ -33,12 +33,12 @@ func TestReadKey(t *testing.T) {
 		{name: "alt right is an unmodified right", in: "\x1b[1;3C", want: keyRight},
 		{name: "modifier too large to read", in: "\x1b[1;99999999999999999999C", want: keyRight},
 		{name: "modifier below one", in: "\x1b[1;0C", want: keyRight},
+		{name: "escape", in: "\x1b", want: keyEscape},
+		{name: "escape then a key that is no sequence", in: "\x1bX", want: keyEscape},
 		{name: "unknown escape sequence", in: "\x1b[Z", want: keyUnknown},
 		{name: "unknown escape sequence with parameters", in: "\x1b[1;5Z", want: keyUnknown},
 		{name: "parameters at end of input", in: "\x1b[1;5", wantErr: true},
-		{name: "escape without bracket", in: "\x1bX", want: keyUnknown},
 		{name: "empty input", in: "", wantErr: true},
-		{name: "escape at end of input", in: "\x1b", wantErr: true},
 		{name: "bracket at end of input", in: "\x1b[", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -70,6 +70,20 @@ func TestReadKeyReadsOneKeyAtATime(t *testing.T) {
 		}
 		if got != w {
 			t.Errorf("key %d = %d, want %d", i, got, w)
+		}
+	}
+}
+
+// The escape key leaves the key behind it to be read next, so typing it is not lost.
+func TestReadKeyKeepsTheKeyAfterAnEscape(t *testing.T) {
+	in := bufio.NewReader(strings.NewReader("\x1bX"))
+	for i, want := range []key{keyEscape, 'X'} {
+		got, err := readKey(in)
+		if err != nil {
+			t.Fatalf("readKey %d: %v", i, err)
+		}
+		if got != want {
+			t.Errorf("readKey %d = %d, want %d", i, got, want)
 		}
 	}
 }

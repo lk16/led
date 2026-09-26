@@ -11,11 +11,12 @@ import (
 type key rune
 
 const (
-	keyTab   key = '\t'
-	keyCtrlS key = 0x13
-	keyCtrlW key = 0x17
-	keyEnter key = '\r'
-	keyBack  key = 0x7f
+	keyTab    key = '\t'
+	keyEnter  key = '\r'
+	keyCtrlS  key = 0x13
+	keyCtrlW  key = 0x17
+	keyEscape key = 0x1b
+	keyBack   key = 0x7f
 )
 
 // Special keys sit above the Unicode range, so they can never be a typed rune.
@@ -48,8 +49,13 @@ func readKey(in *bufio.Reader) (key, error) {
 	if err != nil {
 		return 0, err
 	}
-	if r != 0x1b {
+	if key(r) != keyEscape {
 		return key(r), nil
+	}
+	// A terminal sends an escape sequence in one go, so an escape with nothing
+	// behind it is the escape key. See docs/terminal.md.
+	if in.Buffered() == 0 {
+		return keyEscape, nil
 	}
 
 	b, err := in.ReadByte()
@@ -57,7 +63,7 @@ func readKey(in *bufio.Reader) (key, error) {
 		return 0, err
 	}
 	if b != '[' {
-		return keyUnknown, nil
+		return keyEscape, in.UnreadByte()
 	}
 
 	var params []byte

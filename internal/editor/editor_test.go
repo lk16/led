@@ -279,6 +279,11 @@ func TestHandleKey(t *testing.T) {
 			want: []string{"a\tb", "cd"},
 		},
 		{
+			name: "escape is ignored",
+			k:    keyEscape,
+			want: []string{"ab", "cd"},
+		},
+		{
 			name: "unknown key is ignored",
 			k:    keyUnknown,
 			want: []string{"ab", "cd"},
