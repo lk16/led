@@ -3,7 +3,7 @@
 - Opens one file, given as the only argument.
 - Shows line numbers.
 - Shows a status bar with the path of the open file, with the home directory as `~`.
-- Asks what to do with unsaved changes before closing.
+- Asks what to do with unsaved changes before closing. Escape takes the question away and goes back to the file.
 - Colors keywords, strings, comments, numbers and escape sequences for Go, JavaScript, Python and Rust. See [highlighting.md](highlighting.md).
 - Colors the bracket under the cursor and the one it matches, a color per kind. A bracket without a match, or with one of the wrong kind, turns red. Brackets in strings and comments do not count.
 - The tab key inserts a tab, never spaces. There is no setting for that.

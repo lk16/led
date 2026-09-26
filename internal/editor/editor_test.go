@@ -628,6 +628,7 @@ func TestAnswerPrompt(t *testing.T) {
 	}{
 		{name: "enter saves and quits", k: keyEnter, wantQuit: true, wantFile: "changed\n"},
 		{name: "q discards and quits", k: 'q', wantQuit: true, wantFile: "old\n"},
+		{name: "escape cancels and keeps editing", k: keyEscape, wantFile: "old\n"},
 		{name: "any other key keeps asking", k: 'x', wantPrompt: true, wantFile: "old\n"},
 		{name: "ctrl w keeps asking", k: keyCtrlW, wantPrompt: true, wantFile: "old\n"},
 	}
@@ -657,6 +658,26 @@ func TestAnswerPrompt(t *testing.T) {
 				t.Errorf("file = %q, want %q", got, tt.wantFile)
 			}
 		})
+	}
+}
+
+// Escape leaves the buffer as it was, so the changes are still there to save.
+func TestAnswerPromptEscapeKeepsTheChanges(t *testing.T) {
+	e := newTestEditor(t, "old\n")
+	e.lines = toLines([]string{"changed"})
+	e.dirty, e.prompt = true, true
+
+	if err := e.handleKey(keyEscape); err != nil {
+		t.Fatalf("handleKey: %v", err)
+	}
+	if !e.dirty {
+		t.Error("dirty = false, want true")
+	}
+	if err := e.handleKey('x'); err != nil {
+		t.Fatalf("handleKey: %v", err)
+	}
+	if got, want := lineStrings(e.lines), []string{"xchanged"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("lines = %q, want %q", got, want)
 	}
 }
 

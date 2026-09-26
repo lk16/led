@@ -148,7 +148,8 @@ func (e *editor) applyKey(k key) error {
 	return nil
 }
 
-// answerPrompt handles the unsaved changes question. Other keys leave it up.
+// answerPrompt handles the unsaved changes question. Escape takes it away and
+// goes back to the file, other keys leave it up.
 func (e *editor) answerPrompt(k key) error {
 	switch k {
 	case keyEnter:
@@ -157,6 +158,9 @@ func (e *editor) answerPrompt(k key) error {
 		}
 	case 'q':
 		// Quit and lose the changes.
+	case keyEscape:
+		e.prompt = false
+		return nil
 	default:
 		return nil
 	}

@@ -17,7 +17,7 @@ const (
 	noBg     = "\x1b[49m"
 )
 
-const unsavedPrompt = "Unsaved changes: Enter saves, q discards."
+const unsavedPrompt = "Unsaved changes: Enter saves, q discards, Esc cancels."
 
 // tabWidth is the number of columns between tab stops. See docs/terminal.md.
 const tabWidth = 8
