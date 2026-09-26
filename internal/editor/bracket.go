@@ -2,33 +2,67 @@ package editor
 
 import "strings"
 
-// bracketColor is Monokai orange. See docs/highlighting.md.
-const bracketColor = "\x1b[38;2;253;151;31m"
+// Bracket colors, one per kind, and red for a bracket without a match.
+// See docs/highlighting.md.
+const (
+	parenColor     = "\x1b[38;2;86;156;214m"  // dark blue
+	braceColor     = "\x1b[38;2;218;112;214m" // purple
+	squareColor    = "\x1b[38;2;215;186;125m" // dark yellow
+	unmatchedColor = "\x1b[38;2;244;71;71m"   // red
+)
 
 // brackets are the pairs led matches, every opening one before its closing one.
 const brackets = "()[]{}"
 
-// matchBrackets picks the pair to color: the bracket under the cursor and the
-// one that matches it. A file type led does not know gets no pair.
-func (e *editor) matchBrackets() {
-	e.hasBracket = false
-	if e.lang != nil {
-		e.bracket, e.hasBracket = matchBracket(e.lines, e.cursor())
+// colorOfBracket returns the color of the pair that r belongs to.
+func colorOfBracket(r rune) string {
+	switch r {
+	case '(', ')':
+		return parenColor
+	case '[', ']':
+		return squareColor
+	default:
+		return braceColor
 	}
 }
 
-// paintBrackets colors the columns of row that hold one of the matched pair.
-func (e *editor) paintBrackets(row int, colors []string) {
-	if !e.hasBracket {
+// matchBrackets picks the brackets to color: the one under the cursor, and the
+// one that matches it. Without a match the cursor's one turns red. A file type
+// led does not know gets no color at all.
+func (e *editor) matchBrackets() {
+	e.bracketColor, e.hasBracket = "", false
+	p := e.cursor()
+	if e.lang == nil || p.y >= len(e.lines) || p.x >= len(e.lines[p.y]) {
 		return
 	}
-	for _, p := range [2]position{e.cursor(), e.bracket} {
+	r := e.lines[p.y][p.x]
+	if !strings.ContainsRune(brackets, r) {
+		return
+	}
+
+	e.bracket, e.hasBracket = matchBracket(e.lines, p)
+	e.bracketColor = unmatchedColor
+	if e.hasBracket {
+		e.bracketColor = colorOfBracket(r)
+	}
+}
+
+// paintBrackets colors the columns of row that hold one of the picked brackets.
+func (e *editor) paintBrackets(row int, colors []string) {
+	if e.bracketColor == "" {
+		return
+	}
+	set := func(p position) {
 		if p.y != row {
-			continue
+			return
 		}
 		if col := column(e.lines[row], p.x); col < len(colors) {
-			colors[col] = bracketColor
+			colors[col] = e.bracketColor
 		}
+	}
+	set(e.cursor())
+	if e.hasBracket {
+		set(e.bracket)
 	}
 }
 

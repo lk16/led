@@ -17,17 +17,21 @@ language is a new entry in that table, nothing else.
 
 ## Colors
 
-Monokai. Terminals disagree on what their 16 named colors look like, so led
-writes the Monokai values as 24-bit color, `\x1b[38;2;R;G;Bm`.
+Monokai, brackets excepted: those follow VS Code, a color per kind. Terminals
+disagree on what their 16 named colors look like, so led writes every value as
+24-bit color, `\x1b[38;2;R;G;Bm`.
 
-| Part              | Color            |
-| ----------------- | ---------------- |
-| Keywords          | pink `#F92672`   |
-| Strings           | yellow `#E6DB74` |
-| Comments          | gray `#75715E`   |
-| Numbers           | purple `#AE81FF` |
-| Escape sequences  | purple `#AE81FF` |
-| Matching brackets | orange `#FD971F` |
+| Part                      | Color                 |
+| ------------------------- | --------------------- |
+| Keywords                  | pink `#F92672`        |
+| Strings                   | yellow `#E6DB74`      |
+| Comments                  | gray `#75715E`        |
+| Numbers                   | purple `#AE81FF`      |
+| Escape sequences          | purple `#AE81FF`      |
+| `(` and `)`               | dark blue `#569CD6`   |
+| `{` and `}`               | purple `#DA70D6`      |
+| `[` and `]`               | dark yellow `#D7BA7D` |
+| A bracket without a match | red `#F44747`         |
 
 Only the text is colored. led sets no background, so the terminal theme keeps
 deciding that. Names, types and calls stay plain; Monokai colors those too, led
@@ -44,7 +48,13 @@ does not.
 
 `()`, `[]` and `{}`. When the cursor sits on one of them, led scans the buffer
 for its match, counting the brackets of the same kind on the way, and colors
-both. Without a match nothing is colored.
+both in the color of that kind. Three kinds, three colors, so a pair right
+inside another is easy to tell apart. Without a match the bracket under the
+cursor turns red and nothing else is colored.
+
+led only colors the pair the cursor is on, so the kind is the only thing left to
+color by. VS Code colors every pair in the file and goes by nesting depth
+instead.
 
 The scan has no idea about strings and comments, so a lone `(` in a comment
 pairs up with a real one. Doing better needs the whole buffer scanned as one

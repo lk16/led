@@ -21,21 +21,22 @@ func (p position) before(q position) bool {
 }
 
 type editor struct {
-	path       string
-	name       string    // path as shown in the status bar
-	lang       *language // how to color the file, nil for an unknown file type
-	lines      [][]rune
-	cx, cy     int      // cursor column and row in the buffer
-	anchor     position // other end of the selection, only set while selecting
-	bracket    position // bracket matching the one under the cursor
-	hasBracket bool     // the cursor is on a bracket that has a match
-	selecting  bool     // shift + arrows are extending a selection
-	rowOff     int      // first buffer row shown on screen
-	rows       int
-	cols       int
-	dirty      bool // buffer has edits that are not saved
-	prompt     bool // asking what to do with those edits
-	quit       bool
+	path         string
+	name         string    // path as shown in the status bar
+	lang         *language // how to color the file, nil for an unknown file type
+	lines        [][]rune
+	cx, cy       int      // cursor column and row in the buffer
+	anchor       position // other end of the selection, only set while selecting
+	bracket      position // bracket matching the one under the cursor
+	hasBracket   bool     // the cursor is on a bracket that has a match
+	bracketColor string   // color of the bracket under the cursor, "" when it is not on one
+	selecting    bool     // shift + arrows are extending a selection
+	rowOff       int      // first buffer row shown on screen
+	rows         int
+	cols         int
+	dirty        bool // buffer has edits that are not saved
+	prompt       bool // asking what to do with those edits
+	quit         bool
 }
 
 func newEditor(path string) (*editor, error) {

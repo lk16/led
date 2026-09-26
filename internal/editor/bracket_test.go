@@ -6,8 +6,20 @@ import (
 	"testing"
 )
 
-func bracket(text string) string {
-	return bracketColor + text + reset
+func paren(text string) string {
+	return parenColor + text + reset
+}
+
+func square(text string) string {
+	return squareColor + text + reset
+}
+
+func brace(text string) string {
+	return braceColor + text + reset
+}
+
+func unmatched(text string) string {
+	return unmatchedColor + text + reset
 }
 
 func TestMatchBracket(t *testing.T) {
@@ -85,7 +97,7 @@ func TestRenderColorsAMatchingPair(t *testing.T) {
 	if err := e.render(&b); err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	want := "f" + bracket("(") + "x" + bracket(")")
+	want := "f" + paren("(") + "x" + paren(")")
 	if got := b.String(); !strings.Contains(got, want) {
 		t.Errorf("render = %q, want it to contain %q", got, want)
 	}
@@ -97,18 +109,69 @@ func TestRenderColorsAPairOverTwoRows(t *testing.T) {
 	if err := e.render(&b); err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if got := b.String(); !strings.Contains(got, "f"+bracket("(")) || !strings.Contains(got, bracket(")")) {
+	if got := b.String(); !strings.Contains(got, "f"+paren("(")) || !strings.Contains(got, paren(")")) {
 		t.Errorf("render = %q, want both brackets colored", got)
 	}
 }
 
-func TestRenderLeavesAnUnmatchedBracketPlain(t *testing.T) {
-	e := &editor{name: "f.go", lang: languageFor("f.go"), lines: toLines([]string{"f(x"}), rows: 2, cols: 20, cx: 1}
+// A pair colors by its kind, so nesting stays readable. See docs/highlighting.md.
+func TestRenderColorsAPairByItsKind(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{"f(x)", "f" + paren("(") + "x" + paren(")")},
+		{"a[k]", "a" + square("[") + "k" + square("]")},
+		{"m{k}", "m" + brace("{") + "k" + brace("}")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			e := &editor{name: "f.go", lang: languageFor("f.go"), lines: toLines([]string{tt.line}), rows: 2, cols: 20, cx: 1}
+			var b bytes.Buffer
+			if err := e.render(&b); err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			if got := b.String(); !strings.Contains(got, tt.want) {
+				t.Errorf("render = %q, want it to contain %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// A bracket the cursor sits on that has no match turns red.
+func TestRenderColorsABracketWithoutAMatchRed(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{"no closing bracket", "f(x", "f" + unmatched("(") + "x"},
+		{"no opening bracket", ")x", unmatched(")") + "x"},
+		{"another kind closes it", "(]", unmatched("(") + "]"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cx := strings.IndexAny(tt.line, brackets)
+			e := &editor{name: "f.go", lang: languageFor("f.go"), lines: toLines([]string{tt.line}), rows: 2, cols: 20, cx: cx}
+			var b bytes.Buffer
+			if err := e.render(&b); err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			if got := b.String(); !strings.Contains(got, tt.want) {
+				t.Errorf("render = %q, want it to contain %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// A bracket the cursor is not on stays plain, matched or not.
+func TestRenderLeavesTheBracketsAwayFromTheCursorPlain(t *testing.T) {
+	e := &editor{name: "f.go", lang: languageFor("f.go"), lines: toLines([]string{"f(x)"}), rows: 2, cols: 20, cx: 0}
 	var b bytes.Buffer
 	if err := e.render(&b); err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if got := b.String(); !strings.Contains(got, "\x1b[39mf(x") {
+	if got := b.String(); !strings.Contains(got, "\x1b[39mf(x)") {
 		t.Errorf("render = %q, want the line without color", got)
 	}
 }
@@ -131,7 +194,7 @@ func TestRenderColorsABracketAfterATab(t *testing.T) {
 	if err := e.render(&b); err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if got := b.String(); !strings.Contains(got, strings.Repeat(" ", tabWidth)+bracket("()")) {
+	if got := b.String(); !strings.Contains(got, strings.Repeat(" ", tabWidth)+paren("()")) {
 		t.Errorf("render = %q, want both brackets colored after the tab", got)
 	}
 }
