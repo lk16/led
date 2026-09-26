@@ -25,6 +25,7 @@ const tabWidth = 8
 // render draws the whole screen in one write.
 func (e *editor) render(w io.Writer) error {
 	e.scroll()
+	e.matchBrackets()
 	numWidth := len(strconv.Itoa(len(e.lines)))
 	gutter := numWidth + 1
 
@@ -87,7 +88,9 @@ func (e *editor) renderLine(row, width int, st lineState) (string, lineState) {
 	spans, next := e.lang.scan(line, st)
 	line = clipRunes(line, width)
 	from, to := e.selectedColumns(row, len(line))
-	return paint(line, colorsOf(line, spans), from, to), next
+	colors := colorsOf(line, spans)
+	e.paintBrackets(row, colors)
+	return paint(line, colors, from, to), next
 }
 
 // colorsOf returns the color of every column of line.

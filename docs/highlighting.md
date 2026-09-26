@@ -1,6 +1,7 @@
 # Highlighting
 
-led colors keywords, strings, comments and numbers. A hardcoded table per
+led colors keywords, strings, comments and numbers, plus the bracket under the
+cursor and the one it matches. A hardcoded table per
 language, picked by file extension. No highlighting library like chroma, no
 grammar files.
 
@@ -25,6 +26,7 @@ writes the Monokai values as 24-bit color, `\x1b[38;2;R;G;Bm`.
 | Strings  | yellow `#E6DB74` |
 | Comments | gray `#75715E`   |
 | Numbers  | purple `#AE81FF` |
+| Matching brackets | orange `#FD971F` |
 
 Only the text is colored. led sets no background, so the terminal theme keeps
 deciding that. Names, types and calls stay plain; Monokai colors those too, led
@@ -35,6 +37,16 @@ does not.
 - A keyword is a whole word: letters, digits and `_` around it make it plain text again. Keywords in a string or a comment are plain.
 - A number is a word that starts with a digit, plus a dot between digits. So `0xff`, `1e9` and `3.14` are numbers, and `x2` is not.
 - A string runs to its closing quote. Inside `"` and `'` a backslash escapes the next character.
+
+## Brackets
+
+`()`, `[]` and `{}`. When the cursor sits on one of them, led scans the buffer
+for its match, counting the brackets of the same kind on the way, and colors
+both. Without a match nothing is colored.
+
+The scan has no idea about strings and comments, so a lone `(` in a comment
+pairs up with a real one. Doing better needs the whole buffer scanned as one
+text; the line scanner only knows what the line above it left open.
 
 ## Over more than one line
 
