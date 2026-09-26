@@ -5,6 +5,7 @@ led is lk16's editor: a minimal terminal text editor, written in Go.
 Read this file fully before any change. Decisions and their reasons live in `docs/`:
 
 - [docs/features.md](docs/features.md): what the editor does
+- [docs/bugs.md](docs/bugs.md): what it gets wrong
 - [docs/go.md](docs/go.md): why Go, dependency rules
 - [docs/running.md](docs/running.md): how to run it, and `go run` arguments
 - [docs/terminal.md](docs/terminal.md): raw mode, screen output

@@ -224,13 +224,141 @@ func TestMove(t *testing.T) {
 		{"ctrl right at the end of the buffer", []string{"ab"}, 2, 0, keyRight | modCtrl, 2, 0},
 		{"ctrl up moves like up", []string{"ab", "cd"}, 1, 1, keyUp | modCtrl, 1, 0},
 		{"ctrl down moves like down", []string{"ab", "cd"}, 1, 0, keyDown | modCtrl, 1, 1},
+		{"home", []string{"abc"}, 2, 0, keyHome, 0, 0},
+		{"home at the line start", []string{"abc"}, 0, 0, keyHome, 0, 0},
+		{"end", []string{"abc"}, 1, 0, keyEnd, 3, 0},
+		{"end at the line end", []string{"abc"}, 3, 0, keyEnd, 3, 0},
+		{"end on an empty line", []string{""}, 0, 0, keyEnd, 0, 0},
+		{"ctrl home moves like home", []string{"abc"}, 2, 0, keyHome | modCtrl, 0, 0},
+		{"ctrl end moves like end", []string{"abc"}, 1, 0, keyEnd | modCtrl, 3, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Outside a run of moves between lines, goal is the column the cursor is in.
+			e := &editor{lines: toLines(tt.lines), cx: tt.cx, cy: tt.cy, goal: tt.cx}
+			e.move(tt.k)
+			if e.cx != tt.wantCx || e.cy != tt.wantCy {
+				t.Errorf("cursor = (%d,%d), want (%d,%d)", e.cx, e.cy, tt.wantCx, tt.wantCy)
+			}
+		})
+	}
+}
+
+// A short line on the way does not pull the cursor left for good.
+func TestMoveBetweenLinesKeepsTheColumn(t *testing.T) {
+	lines := []string{"abcde", "x", "abcde", "", "abcde"}
+	tests := []struct {
+		name string
+		keys []key
+		want position
+	}{
+		{"down over a short line", []key{keyDown, keyDown}, position{2, 4}},
+		{"down over an empty line", []key{keyDown, keyDown, keyDown, keyDown}, position{4, 4}},
+		{"up over a short line", []key{keyDown, keyDown, keyUp, keyUp}, position{0, 4}},
+		{"a step left picks a new column", []key{keyDown, keyLeft, keyDown}, position{2, 0}},
+		{"typing picks a new column", []key{keyDown, 'y', keyDown}, position{2, 2}},
+		{"home picks a new column", []key{keyHome, keyDown, keyDown}, position{2, 0}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{lines: toLines(lines), cx: 4, rows: 8}
+			for i, k := range tt.keys {
+				if err := e.handleKey(k); err != nil {
+					t.Fatalf("key %d: %v", i, err)
+				}
+			}
+			if e.cursor() != tt.want {
+				t.Errorf("cursor = %+v, want %+v", e.cursor(), tt.want)
+			}
+		})
+	}
+}
+
+// A page is the rows the file gets, so the screen without its status bar.
+func TestMoveByPage(t *testing.T) {
+	lines := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
+	tests := []struct {
+		name   string
+		cy     int
+		k      key
+		wantCy int
+	}{
+		{"page down", 0, keyPageDown, 3},
+		{"page down past the last line", 6, keyPageDown, 7},
+		{"page down on the last line", 7, keyPageDown, 7},
+		{"page up", 7, keyPageUp, 4},
+		{"page up past the first line", 2, keyPageUp, 0},
+		{"page up on the first line", 0, keyPageUp, 0},
+		{"ctrl page down moves like page down", 0, keyPageDown | modCtrl, 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{lines: toLines(lines), cy: tt.cy, rows: 4}
+			e.move(tt.k)
+			if e.cy != tt.wantCy {
+				t.Errorf("cy = %d, want %d", e.cy, tt.wantCy)
+			}
+		})
+	}
+}
+
+func TestDeleteRune(t *testing.T) {
+	tests := []struct {
+		name       string
+		lines      []string
+		cx, cy     int
+		want       []string
+		wantDirty  bool
+		wantCursor position
+	}{
+		{
+			name: "at the line start", lines: []string{"abc"}, want: []string{"bc"},
+			wantDirty: true,
+		},
+		{
+			name: "in the middle", lines: []string{"abc"}, cx: 1, want: []string{"ac"},
+			wantDirty: true, wantCursor: position{0, 1},
+		},
+		{
+			name: "the last rune of a line", lines: []string{"abc"}, cx: 2, want: []string{"ab"},
+			wantDirty: true, wantCursor: position{0, 2},
+		},
+		{
+			name: "a multi byte rune", lines: []string{"aéb"}, cx: 1, want: []string{"ab"},
+			wantDirty: true, wantCursor: position{0, 1},
+		},
+		{
+			name: "at the line end pulls the next line up", lines: []string{"ab", "cd"}, cx: 2,
+			want: []string{"abcd"}, wantDirty: true, wantCursor: position{0, 2},
+		},
+		{
+			name: "on an empty line pulls the next line up", lines: []string{"", "cd"},
+			want: []string{"cd"}, wantDirty: true,
+		},
+		{
+			name: "at the end of the buffer does nothing", lines: []string{"ab"}, cx: 2,
+			want: []string{"ab"}, wantCursor: position{0, 2},
+		},
+		{
+			name: "on the only empty line does nothing", lines: []string{""}, want: []string{""},
+		},
+		{
+			name: "the last line of more than one", lines: []string{"ab", "cd"}, cx: 2, cy: 1,
+			want: []string{"ab", "cd"}, wantCursor: position{1, 2},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := &editor{lines: toLines(tt.lines), cx: tt.cx, cy: tt.cy}
-			e.move(tt.k)
-			if e.cx != tt.wantCx || e.cy != tt.wantCy {
-				t.Errorf("cursor = (%d,%d), want (%d,%d)", e.cx, e.cy, tt.wantCx, tt.wantCy)
+			e.deleteRune()
+			if got := lineStrings(e.lines); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("lines = %q, want %q", got, tt.want)
+			}
+			if e.cursor() != tt.wantCursor {
+				t.Errorf("cursor = %+v, want %+v", e.cursor(), tt.wantCursor)
+			}
+			if e.dirty != tt.wantDirty {
+				t.Errorf("dirty = %v, want %v", e.dirty, tt.wantDirty)
 			}
 		})
 	}
@@ -272,6 +400,31 @@ func TestHandleKey(t *testing.T) {
 			name: "space is inserted",
 			k:    ' ',
 			want: []string{"a b", "cd"},
+		},
+		{
+			name: "tab inserts a tab",
+			k:    keyTab,
+			want: []string{"a\tb", "cd"},
+		},
+		{
+			name: "delete removes the rune under the cursor",
+			k:    keyDelete,
+			want: []string{"a", "cd"},
+		},
+		{
+			name: "home moves to the line start",
+			k:    keyHome,
+			want: []string{"ab", "cd"},
+			check: func(t *testing.T, e *editor) {
+				if e.cx != 0 {
+					t.Errorf("cx = %d, want 0", e.cx)
+				}
+			},
+		},
+		{
+			name: "escape is ignored",
+			k:    keyEscape,
+			want: []string{"ab", "cd"},
 		},
 		{
 			name: "unknown key is ignored",
@@ -475,6 +628,7 @@ func TestAnswerPrompt(t *testing.T) {
 	}{
 		{name: "enter saves and quits", k: keyEnter, wantQuit: true, wantFile: "changed\n"},
 		{name: "q discards and quits", k: 'q', wantQuit: true, wantFile: "old\n"},
+		{name: "escape cancels and keeps editing", k: keyEscape, wantFile: "old\n"},
 		{name: "any other key keeps asking", k: 'x', wantPrompt: true, wantFile: "old\n"},
 		{name: "ctrl w keeps asking", k: keyCtrlW, wantPrompt: true, wantFile: "old\n"},
 	}
@@ -504,6 +658,26 @@ func TestAnswerPrompt(t *testing.T) {
 				t.Errorf("file = %q, want %q", got, tt.wantFile)
 			}
 		})
+	}
+}
+
+// Escape leaves the buffer as it was, so the changes are still there to save.
+func TestAnswerPromptEscapeKeepsTheChanges(t *testing.T) {
+	e := newTestEditor(t, "old\n")
+	e.lines = toLines([]string{"changed"})
+	e.dirty, e.prompt = true, true
+
+	if err := e.handleKey(keyEscape); err != nil {
+		t.Fatalf("handleKey: %v", err)
+	}
+	if !e.dirty {
+		t.Error("dirty = false, want true")
+	}
+	if err := e.handleKey('x'); err != nil {
+		t.Fatalf("handleKey: %v", err)
+	}
+	if got, want := lineStrings(e.lines), []string{"xchanged"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("lines = %q, want %q", got, want)
 	}
 }
 

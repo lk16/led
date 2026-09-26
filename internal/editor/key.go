@@ -11,10 +11,12 @@ import (
 type key rune
 
 const (
-	keyCtrlS key = 0x13
-	keyCtrlW key = 0x17
-	keyEnter key = '\r'
-	keyBack  key = 0x7f
+	keyTab    key = '\t'
+	keyEnter  key = '\r'
+	keyCtrlS  key = 0x13
+	keyCtrlW  key = 0x17
+	keyEscape key = 0x1b
+	keyBack   key = 0x7f
 )
 
 // Special keys sit above the Unicode range, so they can never be a typed rune.
@@ -23,6 +25,11 @@ const (
 	keyDown
 	keyLeft
 	keyRight
+	keyHome
+	keyEnd
+	keyPageUp
+	keyPageDown
+	keyDelete
 	keyUnknown
 )
 
@@ -32,10 +39,20 @@ const (
 	modCtrl
 )
 
-// isArrow reports whether k is an arrow key, with or without modifiers.
-func (k key) isArrow() bool {
+// isVertical reports whether k moves the cursor between lines, with or without
+// modifiers. Those keys keep the column the cursor wants. See docs/features.md.
+func (k key) isVertical() bool {
 	switch k &^ (modShift | modCtrl) {
-	case keyUp, keyDown, keyLeft, keyRight:
+	case keyUp, keyDown, keyPageUp, keyPageDown:
+		return true
+	}
+	return false
+}
+
+// isMove reports whether k moves the cursor, with or without modifiers.
+func (k key) isMove() bool {
+	switch k &^ (modShift | modCtrl) {
+	case keyUp, keyDown, keyLeft, keyRight, keyHome, keyEnd, keyPageUp, keyPageDown:
 		return true
 	}
 	return false
@@ -47,8 +64,13 @@ func readKey(in *bufio.Reader) (key, error) {
 	if err != nil {
 		return 0, err
 	}
-	if r != 0x1b {
+	if key(r) != keyEscape {
 		return key(r), nil
+	}
+	// A terminal sends an escape sequence in one go, so an escape with nothing
+	// behind it is the escape key. See docs/terminal.md.
+	if in.Buffered() == 0 {
+		return keyEscape, nil
 	}
 
 	b, err := in.ReadByte()
@@ -56,7 +78,7 @@ func readKey(in *bufio.Reader) (key, error) {
 		return 0, err
 	}
 	if b != '[' {
-		return keyUnknown, nil
+		return keyEscape, in.UnreadByte()
 	}
 
 	var params []byte
@@ -71,9 +93,20 @@ func readKey(in *bufio.Reader) (key, error) {
 	}
 }
 
+// tildeKeys are the keys that arrive as a number and a "~". See docs/terminal.md.
+var tildeKeys = map[string]key{
+	"1": keyHome,
+	"3": keyDelete,
+	"4": keyEnd,
+	"5": keyPageUp,
+	"6": keyPageDown,
+	"7": keyHome,
+	"8": keyEnd,
+}
+
 // escapeKey turns the parameters and the final byte of an escape sequence into a key.
 func escapeKey(params []byte, final byte) key {
-	var k key
+	k := keyUnknown
 	switch final {
 	case 'A':
 		k = keyUp
@@ -83,10 +116,20 @@ func escapeKey(params []byte, final byte) key {
 		k = keyRight
 	case 'D':
 		k = keyLeft
-	default:
-		return keyUnknown
+	case 'H':
+		k = keyHome
+	case 'F':
+		k = keyEnd
+	case '~':
+		number, _, _ := strings.Cut(string(params), ";")
+		if t, ok := tildeKeys[number]; ok {
+			k = t
+		}
 	}
-	return k | modifiers(params)
+	if k.isMove() {
+		return k | modifiers(params)
+	}
+	return k
 }
 
 // modifiers reads the modifier parameter of an escape sequence. See docs/terminal.md.

@@ -21,21 +21,22 @@ func (p position) before(q position) bool {
 }
 
 type editor struct {
-	path       string
-	name       string    // path as shown in the status bar
-	lang       *language // how to color the file, nil for an unknown file type
-	lines      [][]rune
-	cx, cy     int      // cursor column and row in the buffer
-	anchor     position // other end of the selection, only set while selecting
-	bracket    position // bracket matching the one under the cursor
-	hasBracket bool     // the cursor is on a bracket that has a match
-	selecting  bool     // shift + arrows are extending a selection
-	rowOff     int      // first buffer row shown on screen
-	rows       int
-	cols       int
-	dirty      bool // buffer has edits that are not saved
-	prompt     bool // asking what to do with those edits
-	quit       bool
+	path         string
+	name         string    // path as shown in the status bar
+	lang         *language // how to color the file, nil for an unknown file type
+	lines        [][]rune
+	cx, cy       int         // cursor column and row in the buffer
+	goal         int         // column the cursor aims for while it moves between lines
+	betweenLines bool        // the key before this one moved between lines, so goal still counts
+	anchor       position    // other end of the selection, only set while selecting
+	pair         bracketPair // the brackets led colors around the cursor
+	selecting    bool        // shift + arrows are extending a selection
+	rowOff       int         // first buffer row shown on screen
+	rows         int
+	cols         int
+	dirty        bool // buffer has edits that are not saved
+	prompt       bool // asking what to do with those edits
+	quit         bool
 }
 
 func newEditor(path string) (*editor, error) {
@@ -81,7 +82,8 @@ func splitLines(data []byte) [][]rune {
 }
 
 // handleKey applies one key press. A shift + arrow selects from where the cursor
-// was, every other key drops the selection.
+// was, every other key drops the selection. A run of moves between lines takes
+// the column the cursor aims for from where that run starts.
 func (e *editor) handleKey(k key) error {
 	if e.prompt {
 		return e.answerPrompt(k)
@@ -89,6 +91,11 @@ func (e *editor) handleKey(k key) error {
 	if k&modShift != 0 && !e.selecting {
 		e.anchor, e.selecting = e.cursor(), true
 	}
+	if !e.betweenLines {
+		e.goal = e.cx
+	}
+	e.betweenLines = k.isVertical()
+
 	err := e.applyKey(k)
 	if k&modShift == 0 {
 		e.selecting = false
@@ -122,13 +129,17 @@ func (e *editor) applyKey(k key) error {
 		e.quit = true
 	case keyCtrlS:
 		return e.save()
+	case keyTab:
+		e.insert('\t')
 	case keyEnter:
 		e.splitLine()
 	case keyBack:
 		e.backspace()
+	case keyDelete:
+		e.deleteRune()
 	default:
 		switch {
-		case k.isArrow():
+		case k.isMove():
 			e.move(k)
 		case k >= ' ' && k <= utf8.MaxRune:
 			e.insert(rune(k))
@@ -137,7 +148,8 @@ func (e *editor) applyKey(k key) error {
 	return nil
 }
 
-// answerPrompt handles the unsaved changes question. Other keys leave it up.
+// answerPrompt handles the unsaved changes question. Escape takes it away and
+// goes back to the file, other keys leave it up.
 func (e *editor) answerPrompt(k key) error {
 	switch k {
 	case keyEnter:
@@ -146,6 +158,9 @@ func (e *editor) answerPrompt(k key) error {
 		}
 	case 'q':
 		// Quit and lose the changes.
+	case keyEscape:
+		e.prompt = false
+		return nil
 	default:
 		return nil
 	}
@@ -167,7 +182,9 @@ func (e *editor) save() error {
 	return nil
 }
 
-// move moves the cursor. Shift does not change where it lands, only what gets selected.
+// move moves the cursor. Shift does not change where it lands, only what gets
+// selected. A move between lines lands on the column the cursor wants, clipped to
+// the line it lands in. See docs/features.md.
 func (e *editor) move(k key) {
 	switch k &^ modShift {
 	case keyUp, keyUp | modCtrl:
@@ -210,6 +227,17 @@ func (e *editor) move(k key) {
 			e.cy++
 			e.cx = 0
 		}
+	case keyHome, keyHome | modCtrl:
+		e.cx = 0
+	case keyEnd, keyEnd | modCtrl:
+		e.cx = len(e.lines[e.cy])
+	case keyPageUp, keyPageUp | modCtrl:
+		e.cy = max(e.cy-e.textRows(), 0)
+	case keyPageDown, keyPageDown | modCtrl:
+		e.cy = min(e.cy+e.textRows(), len(e.lines)-1)
+	}
+	if k.isVertical() {
+		e.cx = e.goal
 	}
 	if e.cx > len(e.lines[e.cy]) {
 		e.cx = len(e.lines[e.cy])
@@ -262,6 +290,24 @@ func (e *editor) splitLine() {
 
 	e.cy++
 	e.cx = 0
+	e.dirty = true
+}
+
+// deleteRune removes the rune under the cursor. At the end of a line it pulls the
+// next one up, as backspace does at the start of a line.
+func (e *editor) deleteRune() {
+	line := e.lines[e.cy]
+	if e.cx < len(line) {
+		e.lines[e.cy] = append(line[:e.cx], line[e.cx+1:]...)
+		e.dirty = true
+		return
+	}
+	if e.cy == len(e.lines)-1 {
+		return
+	}
+
+	e.lines[e.cy] = append(line, e.lines[e.cy+1]...)
+	e.lines = append(e.lines[:e.cy+1], e.lines[e.cy+2:]...)
 	e.dirty = true
 }
 
