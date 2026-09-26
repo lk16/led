@@ -97,6 +97,58 @@ func TestSave(t *testing.T) {
 	}
 }
 
+// A file keeps the final newline it had, so saving it back does not change it.
+func TestSaveKeepsTheFinalNewline(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		lines   []string
+		want    string
+	}{
+		{"with a final newline", "a\nb\n", []string{"a", "b"}, "a\nb\n"},
+		{"without a final newline", "a\nb", []string{"a", "b"}, "a\nb"},
+		{"empty file stays empty", "", []string{""}, ""},
+		{"text typed into an empty file", "", []string{"hi"}, "hi\n"},
+		{"a line added without a final newline", "a", []string{"a", "b"}, "a\nb"},
+		{"an empty last line", "a\n", []string{"a", ""}, "a\n\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newTestEditor(t, tt.content)
+			e.lines = toLines(tt.lines)
+			if err := e.save(); err != nil {
+				t.Fatalf("save: %v", err)
+			}
+			data, err := os.ReadFile(e.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := string(data); got != tt.want {
+				t.Errorf("file = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSaveNewFileEndsWithANewline(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "new.txt")
+	e, err := newEditor(path)
+	if err != nil {
+		t.Fatalf("newEditor: %v", err)
+	}
+	e.lines = toLines([]string{"a"})
+	if err := e.save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(data), "a\n"; got != want {
+		t.Errorf("file = %q, want %q", got, want)
+	}
+}
+
 func TestSaveError(t *testing.T) {
 	e := newTestEditor(t, "a\n")
 	e.path = filepath.Join(e.path, "nope.txt") // a path under a regular file

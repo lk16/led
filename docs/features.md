@@ -1,6 +1,7 @@
 # Features
 
 - Opens one file, given as the only argument.
+- A save keeps the final newline as the file had it. A file that ends without one is saved without one, and an empty file stays empty.
 - Shows line numbers.
 - Shows a status bar with the path of the open file, with the home directory as `~`.
 - Asks what to do with unsaved changes before closing. Escape takes the question away and goes back to the file.

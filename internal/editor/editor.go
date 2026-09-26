@@ -35,6 +35,7 @@ type editor struct {
 	rows         int
 	cols         int
 	dirty        bool // buffer has edits that are not saved
+	finalNewline bool // the file ends with a newline, so a save writes one
 	prompt       bool // asking what to do with those edits
 	quit         bool
 }
@@ -46,12 +47,13 @@ func newEditor(path string) (*editor, error) {
 	}
 	home, _ := os.UserHomeDir()
 	e := &editor{
-		path:  path,
-		name:  shortPath(path, home),
-		lang:  languageFor(path),
-		lines: splitLines(data),
-		rows:  24,
-		cols:  80,
+		path:         path,
+		name:         shortPath(path, home),
+		lang:         languageFor(path),
+		lines:        splitLines(data),
+		rows:         24,
+		cols:         80,
+		finalNewline: len(data) == 0 || strings.HasSuffix(string(data), "\n"),
 	}
 	return e, nil
 }
@@ -169,10 +171,17 @@ func (e *editor) answerPrompt(k key) error {
 	return nil
 }
 
+// save writes the buffer to the file. An empty buffer makes an empty file.
+// See docs/features.md.
 func (e *editor) save() error {
 	var b strings.Builder
-	for _, line := range e.lines {
+	for i, line := range e.lines {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
 		b.WriteString(string(line))
+	}
+	if e.finalNewline && b.Len() > 0 {
 		b.WriteByte('\n')
 	}
 	if err := os.WriteFile(e.path, []byte(b.String()), 0o644); err != nil {

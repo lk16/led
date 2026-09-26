@@ -5,7 +5,6 @@ Take a line off this list in the commit that fixes it.
 
 ## Files
 
-- A file that ends without a newline gets one on save. An empty file becomes a single newline.
 - A CRLF file keeps the `\r` at the end of every line. It is a rune in the buffer like any other, and drawing it puts the cursor back to the first column.
 - Bytes that are not UTF-8 are read as U+FFFD and saved as U+FFFD, so opening a binary or Latin-1 file and saving it damages it.
 - A save truncates the file in place, with no temporary file and rename. A write that fails halfway, on a full disk, leaves the file short.
