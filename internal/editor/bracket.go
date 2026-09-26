@@ -126,23 +126,24 @@ func (e *editor) openingOf(p position) bracketPair {
 				continue
 			}
 			r := e.lines[y][x]
-			if k := strings.IndexRune(brackets, r); k%2 == 1 {
+			k := strings.IndexRune(brackets, r)
+			if k%2 == 1 {
 				stack = append(stack, r)
 				continue
-			} else {
-				closer := rune(brackets[k+1])
-				for len(stack) > 0 && stack[len(stack)-1] != closer {
-					stack = stack[:len(stack)-1]
-				}
-				if len(stack) > 0 {
-					stack = stack[:len(stack)-1]
-					continue
-				}
-				if closer != shut {
-					return bracketPair{color: unmatchedColor}
-				}
-				return bracketPair{match: position{y: y, x: x}, matched: true, color: colorOfBracket(shut)}
 			}
+
+			closer := rune(brackets[k+1])
+			for len(stack) > 0 && stack[len(stack)-1] != closer {
+				stack = stack[:len(stack)-1]
+			}
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+				continue
+			}
+			if closer != shut {
+				return bracketPair{color: unmatchedColor}
+			}
+			return bracketPair{match: position{y: y, x: x}, matched: true, color: colorOfBracket(shut)}
 		}
 	}
 	return bracketPair{color: unmatchedColor}
