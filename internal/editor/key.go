@@ -18,6 +18,8 @@ const (
 	keyCtrlV  key = 0x16
 	keyCtrlW  key = 0x17
 	keyCtrlX  key = 0x18
+	keyCtrlY  key = 0x19
+	keyCtrlZ  key = 0x1a
 	keyEscape key = 0x1b
 	keyBack   key = 0x7f
 )

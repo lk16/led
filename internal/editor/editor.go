@@ -33,6 +33,8 @@ type editor struct {
 	pair         bracketPair // the brackets led colors around the cursor
 	selecting    bool        // shift + arrows are extending a selection
 	clipboard    string      // text cut or copied, led's own, not the system one
+	undoStack    []change    // changes ctrl + z takes back, newest last
+	redoStack    []change    // changes ctrl + y puts back, newest last
 	rowOff       int         // first buffer row shown on screen
 	colOff       int         // first screen column of a line shown on screen
 	rows         int
@@ -143,6 +145,10 @@ func (e *editor) applyKey(k key) error {
 		e.copy()
 	case keyCtrlV:
 		e.paste()
+	case keyCtrlZ:
+		e.undo()
+	case keyCtrlY:
+		e.redo()
 	case keyTab:
 		e.insert('\t')
 	case keyEnter:
@@ -304,73 +310,61 @@ func isWordRune(r rune) bool {
 }
 
 func (e *editor) insert(r rune) {
-	line := append(e.lines[e.cy], 0)
-	copy(line[e.cx+1:], line[e.cx:])
-	line[e.cx] = r
-	e.lines[e.cy] = line
-	e.cx++
-	e.dirty = true
+	e.cx = e.insertText(e.cursor(), string(r)).x
 }
 
 func (e *editor) splitLine() {
-	line := e.lines[e.cy]
-	tail := append([]rune(nil), line[e.cx:]...)
-
-	e.lines[e.cy] = line[:e.cx]
-	e.lines = append(e.lines, nil)
-	copy(e.lines[e.cy+2:], e.lines[e.cy+1:])
-	e.lines[e.cy+1] = tail
-
-	e.cy++
-	e.cx = 0
-	e.dirty = true
+	p := e.insertText(e.cursor(), "\n")
+	e.cy, e.cx = p.y, p.x
 }
 
 // deleteRune removes the rune under the cursor. At the end of a line it pulls the
 // next one up, as backspace does at the start of a line.
 func (e *editor) deleteRune() {
-	line := e.lines[e.cy]
-	if e.cx < len(line) {
-		e.lines[e.cy] = append(line[:e.cx], line[e.cx+1:]...)
-		e.dirty = true
-		return
+	switch {
+	case e.cx < len(e.lines[e.cy]):
+		e.removeText(e.cursor(), position{y: e.cy, x: e.cx + 1})
+	case e.cy < len(e.lines)-1:
+		e.removeText(e.cursor(), position{y: e.cy + 1, x: 0})
 	}
-	if e.cy == len(e.lines)-1 {
-		return
-	}
-
-	e.lines[e.cy] = append(line, e.lines[e.cy+1]...)
-	e.lines = append(e.lines[:e.cy+1], e.lines[e.cy+2:]...)
-	e.dirty = true
 }
 
 func (e *editor) backspace() {
-	if e.cx > 0 {
-		line := e.lines[e.cy]
-		copy(line[e.cx-1:], line[e.cx:])
-		e.lines[e.cy] = line[:len(line)-1]
-		e.cx--
-		e.dirty = true
+	var start position
+	switch {
+	case e.cx > 0:
+		start = position{y: e.cy, x: e.cx - 1}
+	case e.cy > 0:
+		start = position{y: e.cy - 1, x: len(e.lines[e.cy-1])}
+	default:
 		return
 	}
-	if e.cy == 0 {
-		return
-	}
-
-	prev := e.lines[e.cy-1]
-	e.cx = len(prev)
-	e.lines[e.cy-1] = append(prev, e.lines[e.cy]...)
-	e.lines = append(e.lines[:e.cy], e.lines[e.cy+1:]...)
-	e.cy--
-	e.dirty = true
+	e.removeText(start, e.cursor())
+	e.cy, e.cx = start.y, start.x
 }
 
-// insertText inserts text at p and returns the position just after it. A newline
-// in text splits the line it lands in.
+// insertText inserts text at p, records the change, and returns the position
+// just after the text. A newline in text splits the line it lands in.
 func (e *editor) insertText(p position, text string) position {
+	e.record(change{at: p, text: text, insert: true, cursor: e.cursor()})
+	return e.splice(p, p, text)
+}
+
+// removeText removes the text between start and end, in buffer order, records
+// the change, and returns what it removed.
+func (e *editor) removeText(start, end position) string {
+	text := e.textBetween(start, end)
+	e.record(change{at: start, text: text, cursor: e.cursor()})
+	e.splice(start, end, "")
+	return text
+}
+
+// splice puts text where the text between start and end was and returns the
+// position just after it. Every edit to the buffer goes through here.
+func (e *editor) splice(start, end position, text string) position {
 	parts := strings.Split(text, "\n")
-	line := e.lines[p.y]
-	head, tail := line[:p.x:p.x], line[p.x:]
+	head := e.lines[start.y][:start.x:start.x]
+	tail := e.lines[end.y][end.x:]
 
 	mid := make([][]rune, len(parts))
 	mid[0] = append(append([]rune(nil), head...), []rune(parts[0])...)
@@ -379,22 +373,9 @@ func (e *editor) insertText(p position, text string) position {
 	}
 	mid[len(mid)-1] = append(mid[len(mid)-1], tail...)
 
-	e.lines = slices.Concat(e.lines[:p.y], mid, e.lines[p.y+1:])
+	e.lines = slices.Concat(e.lines[:start.y], mid, e.lines[end.y+1:])
 	e.dirty = true
-	return textEnd(p, text)
-}
-
-// removeText removes the text between start and end, in buffer order, and
-// returns what it removed.
-func (e *editor) removeText(start, end position) string {
-	text := e.textBetween(start, end)
-	head := e.lines[start.y][:start.x:start.x]
-	tail := e.lines[end.y][end.x:]
-
-	e.lines = append(e.lines[:start.y], e.lines[end.y:]...)
-	e.lines[start.y] = append(append([]rune(nil), head...), tail...)
-	e.dirty = true
-	return text
+	return textEnd(start, text)
 }
 
 // textBetween returns the text between start and end, in buffer order, with a
@@ -452,4 +433,52 @@ func (e *editor) paste() {
 	}
 	p := e.insertText(e.cursor(), e.clipboard)
 	e.cy, e.cx = p.y, p.x
+}
+
+// A change is one edit: where it happened, the text it put in or took out, and
+// where the cursor was before it. See docs/features.md.
+type change struct {
+	at     position
+	text   string
+	insert bool // the edit inserted the text, so taking it back removes it
+	cursor position
+}
+
+// record puts a change on the undo stack. A new change drops what was undone.
+func (e *editor) record(c change) {
+	e.undoStack = append(e.undoStack, c)
+	e.redoStack = nil
+}
+
+// undo takes the last change back and puts it on the redo stack.
+func (e *editor) undo() {
+	if len(e.undoStack) == 0 {
+		return
+	}
+	last := len(e.undoStack) - 1
+	e.redoStack = append(e.redoStack, e.step(e.undoStack[last]))
+	e.undoStack = e.undoStack[:last]
+}
+
+// redo puts the last change that was taken back in again.
+func (e *editor) redo() {
+	if len(e.redoStack) == 0 {
+		return
+	}
+	last := len(e.redoStack) - 1
+	e.undoStack = append(e.undoStack, e.step(e.redoStack[last]))
+	e.redoStack = e.redoStack[:last]
+}
+
+// step applies the inverse of c, moves the cursor where c wants it, and returns
+// the change that takes this step back.
+func (e *editor) step(c change) change {
+	back := change{at: c.at, text: c.text, insert: !c.insert, cursor: e.cursor()}
+	if c.insert {
+		e.splice(c.at, textEnd(c.at, c.text), "")
+	} else {
+		e.splice(c.at, c.at, c.text)
+	}
+	e.cy, e.cx = c.cursor.y, c.cursor.x
+	return back
 }

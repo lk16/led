@@ -15,9 +15,9 @@ Take a line off this list in the commit that fixes it.
 
 ## Keys
 
-- Raw mode turns the signal keys off and led installs no handler, so ctrl + z does nothing and ctrl + w is the only way out.
+- Raw mode turns the signal keys off, so ctrl + c does not interrupt led and ctrl + z does not suspend it. Ctrl + w is the only way out.
 - An escape sequence that arrives in pieces, over a slow link, is read as the escape key and then typed. See [terminal.md](terminal.md).
-- There is no undo.
+- Undo does not clear the unsaved changes mark. Taking every change back still leaves the buffer as changed.
 
 ## Highlighting
 

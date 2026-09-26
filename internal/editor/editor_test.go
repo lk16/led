@@ -609,10 +609,15 @@ func TestUnhandledCtrlKeyAlerts(t *testing.T) {
 		want string
 	}{
 		{"ctrl + b has no binding", key(0x02), "ctrl + b is not a key led knows"},
-		{"ctrl + z has no binding", key(0x1a), "ctrl + z is not a key led knows"},
+		{"ctrl + o has no binding", key(0x0f), "ctrl + o is not a key led knows"},
 		{"ctrl + backslash has no binding", key(0x1c), "ctrl + \\ is not a key led knows"},
 		{"ctrl + s saves", keyCtrlS, ""},
 		{"ctrl + w closes", keyCtrlW, ""},
+		{"ctrl + x cuts", keyCtrlX, ""},
+		{"ctrl + c copies", keyCtrlC, ""},
+		{"ctrl + v pastes", keyCtrlV, ""},
+		{"ctrl + z undoes", keyCtrlZ, ""},
+		{"ctrl + y redoes", keyCtrlY, ""},
 		{"tab inserts a tab", keyTab, ""},
 		{"enter splits the line", keyEnter, ""},
 		{"backspace deletes", keyBack, ""},
@@ -1402,5 +1407,260 @@ func TestTextEnd(t *testing.T) {
 				t.Errorf("textEnd(%+v, %q) = %+v, want %+v", tt.p, tt.text, got, tt.want)
 			}
 		})
+	}
+}
+
+// Every edit can be taken back and put in again. Undo leaves the cursor where it
+// was before the edit, redo where the edit left it. See docs/features.md.
+func TestUndoAndRedo(t *testing.T) {
+	tests := []struct {
+		name       string
+		lines      []string
+		cursor     position
+		clipboard  string
+		keys       []key
+		wantLines  []string
+		wantCursor position
+		wantUndone position // cursor after the undo
+	}{
+		{
+			name: "typing", lines: []string{"ab"}, cursor: position{0, 1}, keys: []key{'x'},
+			wantLines: []string{"axb"}, wantCursor: position{0, 2}, wantUndone: position{0, 1},
+		},
+		{
+			name: "a tab", lines: []string{"ab"}, cursor: position{0, 1}, keys: []key{keyTab},
+			wantLines: []string{"a\tb"}, wantCursor: position{0, 2}, wantUndone: position{0, 1},
+		},
+		{
+			name: "enter", lines: []string{"abc"}, cursor: position{0, 1}, keys: []key{keyEnter},
+			wantLines: []string{"a", "bc"}, wantCursor: position{1, 0}, wantUndone: position{0, 1},
+		},
+		{
+			name: "enter at the end of a line", lines: []string{"ab", "cd"}, cursor: position{0, 2},
+			keys:      []key{keyEnter},
+			wantLines: []string{"ab", "", "cd"}, wantCursor: position{1, 0}, wantUndone: position{0, 2},
+		},
+		{
+			name: "backspace in a line", lines: []string{"abc"}, cursor: position{0, 2},
+			keys:      []key{keyBack},
+			wantLines: []string{"ac"}, wantCursor: position{0, 1}, wantUndone: position{0, 2},
+		},
+		{
+			name: "backspace joining lines", lines: []string{"ab", "cd"}, cursor: position{1, 0},
+			keys:      []key{keyBack},
+			wantLines: []string{"abcd"}, wantCursor: position{0, 2}, wantUndone: position{1, 0},
+		},
+		{
+			name: "delete in a line", lines: []string{"abc"}, cursor: position{0, 1},
+			keys:      []key{keyDelete},
+			wantLines: []string{"ac"}, wantCursor: position{0, 1}, wantUndone: position{0, 1},
+		},
+		{
+			name: "delete joining lines", lines: []string{"ab", "cd"}, cursor: position{0, 2},
+			keys:      []key{keyDelete},
+			wantLines: []string{"abcd"}, wantCursor: position{0, 2}, wantUndone: position{0, 2},
+		},
+		{
+			name: "a cut inside one line", lines: []string{"abcd"}, cursor: position{0, 1},
+			keys:      []key{keyRight | modShift, keyRight | modShift, keyCtrlX},
+			wantLines: []string{"ad"}, wantCursor: position{0, 1}, wantUndone: position{0, 3},
+		},
+		{
+			name: "a cut over two lines", lines: []string{"abc", "def"}, cursor: position{0, 1},
+			keys:      []key{keyDown | modShift, keyCtrlX},
+			wantLines: []string{"aef"}, wantCursor: position{0, 1}, wantUndone: position{1, 1},
+		},
+		{
+			name: "a paste of one line", lines: []string{"ab"}, cursor: position{0, 1}, clipboard: "XY",
+			keys:      []key{keyCtrlV},
+			wantLines: []string{"aXYb"}, wantCursor: position{0, 3}, wantUndone: position{0, 1},
+		},
+		{
+			name: "a paste of two lines", lines: []string{"ab"}, cursor: position{0, 1}, clipboard: "X\nY",
+			keys:      []key{keyCtrlV},
+			wantLines: []string{"aX", "Yb"}, wantCursor: position{1, 1}, wantUndone: position{0, 1},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{
+				lines:     toLines(tt.lines),
+				cy:        tt.cursor.y,
+				cx:        tt.cursor.x,
+				clipboard: tt.clipboard,
+			}
+			for i, k := range tt.keys {
+				if err := e.handleKey(k); err != nil {
+					t.Fatalf("key %d: %v", i, err)
+				}
+			}
+			if got := lineStrings(e.lines); !reflect.DeepEqual(got, tt.wantLines) {
+				t.Fatalf("lines after the edit = %q, want %q", got, tt.wantLines)
+			}
+			if e.cursor() != tt.wantCursor {
+				t.Fatalf("cursor after the edit = %+v, want %+v", e.cursor(), tt.wantCursor)
+			}
+
+			if err := e.handleKey(keyCtrlZ); err != nil {
+				t.Fatalf("undo: %v", err)
+			}
+			if got := lineStrings(e.lines); !reflect.DeepEqual(got, tt.lines) {
+				t.Errorf("lines after the undo = %q, want %q", got, tt.lines)
+			}
+			if e.cursor() != tt.wantUndone {
+				t.Errorf("cursor after the undo = %+v, want %+v", e.cursor(), tt.wantUndone)
+			}
+
+			if err := e.handleKey(keyCtrlY); err != nil {
+				t.Fatalf("redo: %v", err)
+			}
+			if got := lineStrings(e.lines); !reflect.DeepEqual(got, tt.wantLines) {
+				t.Errorf("lines after the redo = %q, want %q", got, tt.wantLines)
+			}
+			if e.cursor() != tt.wantCursor {
+				t.Errorf("cursor after the redo = %+v, want %+v", e.cursor(), tt.wantCursor)
+			}
+		})
+	}
+}
+
+// One key press is one step, so typing two runes takes two presses to take back.
+func TestUndoAndRedoTwice(t *testing.T) {
+	e := &editor{lines: toLines([]string{"ab"}), cx: 1}
+	for i, k := range []key{'x', 'y'} {
+		if err := e.handleKey(k); err != nil {
+			t.Fatalf("key %d: %v", i, err)
+		}
+	}
+	if got, want := lineStrings(e.lines), []string{"axyb"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("lines = %q, want %q", got, want)
+	}
+
+	steps := []struct {
+		k     key
+		want  []string
+		where position
+	}{
+		{keyCtrlZ, []string{"axb"}, position{0, 2}},
+		{keyCtrlZ, []string{"ab"}, position{0, 1}},
+		{keyCtrlY, []string{"axb"}, position{0, 2}},
+		{keyCtrlY, []string{"axyb"}, position{0, 3}},
+	}
+	for i, step := range steps {
+		if err := e.handleKey(step.k); err != nil {
+			t.Fatalf("step %d: %v", i, err)
+		}
+		if got := lineStrings(e.lines); !reflect.DeepEqual(got, step.want) {
+			t.Errorf("step %d: lines = %q, want %q", i, got, step.want)
+		}
+		if e.cursor() != step.where {
+			t.Errorf("step %d: cursor = %+v, want %+v", i, e.cursor(), step.where)
+		}
+	}
+}
+
+// A new edit drops what was undone, so there is nothing to redo.
+func TestEditAfterUndoDropsTheRedo(t *testing.T) {
+	e := &editor{lines: toLines([]string{"ab"}), cx: 1}
+	for i, k := range []key{'x', keyCtrlZ, 'y'} {
+		if err := e.handleKey(k); err != nil {
+			t.Fatalf("key %d: %v", i, err)
+		}
+	}
+	if len(e.redoStack) != 0 {
+		t.Errorf("redo stack = %d changes, want 0", len(e.redoStack))
+	}
+	if err := e.handleKey(keyCtrlY); err != nil {
+		t.Fatalf("redo: %v", err)
+	}
+	if got, want := lineStrings(e.lines), []string{"ayb"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("lines = %q, want %q", got, want)
+	}
+}
+
+func TestUndoAndRedoWithEmptyStacks(t *testing.T) {
+	tests := []struct {
+		name string
+		keys []key
+		want []string
+	}{
+		{"undo without a change", []key{keyCtrlZ}, []string{"ab", "cd"}},
+		{"redo without an undo", []key{keyCtrlY}, []string{"ab", "cd"}},
+		{"undo twice after one change", []key{'x', keyCtrlZ, keyCtrlZ}, []string{"ab", "cd"}},
+		{"redo twice after one undo", []key{'x', keyCtrlZ, keyCtrlY, keyCtrlY}, []string{"axb", "cd"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{lines: toLines([]string{"ab", "cd"}), cx: 1}
+			for i, k := range tt.keys {
+				if err := e.handleKey(k); err != nil {
+					t.Fatalf("key %d: %v", i, err)
+				}
+			}
+			if got := lineStrings(e.lines); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("lines = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// Nothing to undo means nothing happens at all, so the buffer stays clean.
+func TestUndoWithNothingToUndoKeepsTheBufferClean(t *testing.T) {
+	e := &editor{lines: toLines([]string{"ab"}), cx: 1}
+	for _, k := range []key{keyCtrlZ, keyCtrlY} {
+		if err := e.handleKey(k); err != nil {
+			t.Fatalf("handleKey: %v", err)
+		}
+	}
+	if e.dirty {
+		t.Error("dirty = true, want false")
+	}
+	if got, want := lineStrings(e.lines), []string{"ab"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("lines = %q, want %q", got, want)
+	}
+}
+
+// An undo is a change to the buffer like any other. See docs/bugs.md.
+func TestUndoAndRedoKeepTheBufferDirty(t *testing.T) {
+	e := &editor{lines: toLines([]string{"ab"}), cx: 1}
+	for i, k := range []key{'x', keyCtrlZ, keyCtrlY} {
+		if err := e.handleKey(k); err != nil {
+			t.Fatalf("key %d: %v", i, err)
+		}
+		if !e.dirty {
+			t.Errorf("dirty = false after key %d, want true", i)
+		}
+	}
+}
+
+// Undoing every change gets the buffer back to what the file held.
+func TestUndoEverythingGetsTheFileBack(t *testing.T) {
+	const content = "one\ntwo\nthree\n"
+	e := newTestEditor(t, content)
+	keys := []key{
+		'x', keyEnter, keyBack, keyDelete, keyEnd, keyDown,
+		keyRight | modShift, keyRight | modShift, keyCtrlX,
+		keyCtrlV, 'y', keyBack, keyBack,
+	}
+	for i, k := range keys {
+		if err := e.handleKey(k); err != nil {
+			t.Fatalf("key %d: %v", i, err)
+		}
+	}
+	want := lineStrings(splitLines([]byte(content)))
+	if got := lineStrings(e.lines); reflect.DeepEqual(got, want) {
+		t.Fatalf("the keys left the buffer at %q, so there is nothing to undo", got)
+	}
+
+	for range keys {
+		if err := e.handleKey(keyCtrlZ); err != nil {
+			t.Fatalf("undo: %v", err)
+		}
+	}
+	if got := lineStrings(e.lines); !reflect.DeepEqual(got, want) {
+		t.Errorf("lines = %q, want %q", got, want)
+	}
+	if len(e.undoStack) != 0 {
+		t.Errorf("undo stack = %d changes, want 0", len(e.undoStack))
 	}
 }

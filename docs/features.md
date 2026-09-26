@@ -17,6 +17,7 @@
 - Delete removes the rune under the cursor. At the end of a line it pulls the next one up.
 - Shift + arrows select text. With ctrl they select a word at a time. Shift works the same with home, end and page up or down.
 - Ctrl + x cuts the selection, ctrl + c copies it and ctrl + v pastes at the cursor. The clipboard is led's own, not the one of the system. Paste drops a selection instead of replacing it, just as typing does.
+- Ctrl + z takes the last change back, ctrl + y puts it in again. One key press is one step, so typing a word takes a press per rune. A new change drops what was undone.
 - Draws at the size of the terminal, and follows it when the terminal is resized. See [terminal.md](terminal.md).
 - Dark mode only.
 
