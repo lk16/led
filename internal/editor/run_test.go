@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"testing/iotest"
 	"time"
 )
 
@@ -252,9 +253,45 @@ func TestLoopReturnsWriteError(t *testing.T) {
 	}
 }
 
+// A screen that fits in the buffer of the writer only reaches the terminal on the
+// flush, so that is where its error comes from.
+func TestLoopReturnsFlushError(t *testing.T) {
+	e := &editor{lines: toLines([]string{"a"}), rows: 1, cols: 20}
+	err := e.loop(bufio.NewReader(strings.NewReader("a")), bufio.NewWriterSize(errWriter{}, 4096))
+	if err == nil {
+		t.Error("loop with a failing flush: got nil error, want an error")
+	}
+}
+
+// The end of the input closes the editor, any other error from it does not.
+func TestLoopReturnsReadError(t *testing.T) {
+	e := &editor{lines: toLines([]string{"a"}), rows: 1, cols: 20}
+	want := errors.New("read failed")
+	err := e.loop(bufio.NewReader(iotest.ErrReader(want)), bufio.NewWriter(io.Discard))
+	if !errors.Is(err, want) {
+		t.Errorf("loop with a failing reader = %v, want %v", err, want)
+	}
+}
+
 func TestRunReturnsOpenError(t *testing.T) {
 	if err := Run(t.TempDir()); err == nil {
 		t.Error("Run on a directory: got nil error, want an error")
+	}
+}
+
+// led draws on a terminal, so it stops when its input is not one. See docs/terminal.md.
+func TestRunNeedsATerminal(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "stdin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	defer func(stdin *os.File) { os.Stdin = stdin }(os.Stdin)
+	os.Stdin = f
+
+	if err := Run(filepath.Join(t.TempDir(), "f.txt")); err == nil {
+		t.Error("Run with a regular file as input: got nil error, want an error")
 	}
 }
 
