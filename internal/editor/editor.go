@@ -26,7 +26,7 @@ type editor struct {
 	lang         *language // how to color the file, nil for an unknown file type
 	lines        [][]rune
 	cx, cy       int         // cursor column and row in the buffer
-	goal         int         // column the cursor aims for while it moves between lines
+	goal         int         // screen column the cursor aims for while it moves between lines
 	betweenLines bool        // the key before this one moved between lines, so goal still counts
 	anchor       position    // other end of the selection, only set while selecting
 	pair         bracketPair // the brackets led colors around the cursor
@@ -85,7 +85,7 @@ func splitLines(data []byte) [][]rune {
 
 // handleKey applies one key press. A shift + arrow selects from where the cursor
 // was, every other key drops the selection. A run of moves between lines takes
-// the column the cursor aims for from where that run starts.
+// the screen column the cursor aims for from where that run starts.
 func (e *editor) handleKey(k key) error {
 	if e.prompt {
 		return e.answerPrompt(k)
@@ -94,7 +94,7 @@ func (e *editor) handleKey(k key) error {
 		e.anchor, e.selecting = e.cursor(), true
 	}
 	if !e.betweenLines {
-		e.goal = e.cx
+		e.goal = e.cursorColumn()
 	}
 	e.betweenLines = k.isVertical()
 
@@ -192,8 +192,8 @@ func (e *editor) save() error {
 }
 
 // move moves the cursor. Shift does not change where it lands, only what gets
-// selected. A move between lines lands on the column the cursor wants, clipped to
-// the line it lands in. Ctrl + page up or down moves nothing at all.
+// selected. A move between lines lands on the screen column the cursor wants,
+// clipped to the line it lands in. Ctrl + page up or down moves nothing at all.
 // See docs/features.md.
 func (e *editor) move(k key) {
 	switch k &^ modShift {
@@ -254,7 +254,7 @@ func (e *editor) move(k key) {
 		return
 	}
 	if k.isVertical() {
-		e.cx = e.goal
+		e.cx = indexAtColumn(e.lines[e.cy], e.goal)
 	}
 	if e.cx > len(e.lines[e.cy]) {
 		e.cx = len(e.lines[e.cy])

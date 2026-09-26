@@ -297,6 +297,31 @@ func TestCursorColumn(t *testing.T) {
 	}
 }
 
+func TestIndexAtColumn(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		col  int
+		want int
+	}{
+		{"without tabs", "abc", 2, 2},
+		{"the start of a line", "\tabc", 0, 0},
+		{"inside a tab", "\tabc", 3, 0},
+		{"the column after a tab", "\tabc", 8, 1},
+		{"after a tab and text", "\tabc", 10, 3},
+		{"inside the second of two tabs", "\t\ta", 12, 1},
+		{"past the end of the line", "ab", 5, 2},
+		{"an empty line", "", 3, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := indexAtColumn([]rune(tt.line), tt.col); got != tt.want {
+				t.Errorf("indexAtColumn(%q, %d) = %d, want %d", tt.line, tt.col, got, tt.want)
+			}
+		})
+	}
+}
+
 // visibleRows returns what render wrote per screen row, without the escape codes.
 func visibleRows(out string) []string {
 	var rows []string

@@ -171,6 +171,23 @@ func column(line []rune, i int) int {
 	return len(expandTabs(line[:min(i, len(line))]))
 }
 
+// indexAtColumn is the index in line of the rune whose columns cover col, the
+// inverse of column. A col inside a tab gives the index of that tab.
+func indexAtColumn(line []rune, col int) int {
+	at := 0
+	for i, r := range line {
+		width := 1
+		if r == '\t' {
+			width = tabWidth - at%tabWidth
+		}
+		if at+width > col {
+			return i
+		}
+		at += width
+	}
+	return len(line)
+}
+
 // expandTabs replaces every tab by spaces up to the next tab stop. See docs/terminal.md.
 func expandTabs(line []rune) []rune {
 	out := make([]rune, 0, len(line))

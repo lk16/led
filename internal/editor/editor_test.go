@@ -289,7 +289,7 @@ func TestMove(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Outside a run of moves between lines, goal is the column the cursor is in.
+			// Outside a run of moves between lines, goal is the screen column the cursor is in.
 			e := &editor{lines: toLines(tt.lines), cx: tt.cx, cy: tt.cy, goal: tt.cx}
 			e.move(tt.k)
 			if e.cx != tt.wantCx || e.cy != tt.wantCy {
@@ -317,6 +317,63 @@ func TestMoveBetweenLinesKeepsTheColumn(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := &editor{lines: toLines(lines), cx: 4, rows: 8}
+			for i, k := range tt.keys {
+				if err := e.handleKey(k); err != nil {
+					t.Fatalf("key %d: %v", i, err)
+				}
+			}
+			if e.cursor() != tt.want {
+				t.Errorf("cursor = %+v, want %+v", e.cursor(), tt.want)
+			}
+		})
+	}
+}
+
+// A tab is 8 columns wide, so the column a move between lines keeps is a screen
+// column, not a rune index.
+func TestMoveBetweenLinesWithTabs(t *testing.T) {
+	tests := []struct {
+		name   string
+		lines  []string
+		cx, cy int
+		rows   int
+		keys   []key
+		want   position
+	}{
+		{
+			name:  "down from behind a tab lands under it",
+			lines: []string{"\tx", "0123456789"}, cx: 1,
+			keys: []key{keyDown}, want: position{1, 8},
+		},
+		{
+			name:  "up onto a tab line lands behind the tab",
+			lines: []string{"\tx", "0123456789"}, cx: 8, cy: 1,
+			keys: []key{keyUp}, want: position{0, 1},
+		},
+		{
+			name:  "a goal column inside a tab lands on the tab",
+			lines: []string{"01234", "\tx"}, cx: 3,
+			keys: []key{keyDown}, want: position{1, 0},
+		},
+		{
+			name:  "a short line on the way keeps the screen column",
+			lines: []string{"\tx", "", "\tx"}, cx: 2,
+			keys: []key{keyDown, keyDown}, want: position{2, 2},
+		},
+		{
+			name:  "page down keeps the screen column",
+			lines: []string{"\tx", "a", "b", "0123456789"}, cx: 1, rows: 4,
+			keys: []key{keyPageDown}, want: position{3, 8},
+		},
+		{
+			name:  "page up keeps the screen column",
+			lines: []string{"\tx", "a", "b", "0123456789"}, cx: 8, cy: 3, rows: 4,
+			keys: []key{keyPageUp}, want: position{0, 1},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{lines: toLines(tt.lines), cx: tt.cx, cy: tt.cy, rows: tt.rows}
 			for i, k := range tt.keys {
 				if err := e.handleKey(k); err != nil {
 					t.Fatalf("key %d: %v", i, err)
