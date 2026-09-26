@@ -25,6 +25,11 @@ const (
 	keyDown
 	keyLeft
 	keyRight
+	keyHome
+	keyEnd
+	keyPageUp
+	keyPageDown
+	keyDelete
 	keyUnknown
 )
 
@@ -34,10 +39,10 @@ const (
 	modCtrl
 )
 
-// isArrow reports whether k is an arrow key, with or without modifiers.
-func (k key) isArrow() bool {
+// isMove reports whether k moves the cursor, with or without modifiers.
+func (k key) isMove() bool {
 	switch k &^ (modShift | modCtrl) {
-	case keyUp, keyDown, keyLeft, keyRight:
+	case keyUp, keyDown, keyLeft, keyRight, keyHome, keyEnd, keyPageUp, keyPageDown:
 		return true
 	}
 	return false
@@ -78,9 +83,20 @@ func readKey(in *bufio.Reader) (key, error) {
 	}
 }
 
+// tildeKeys are the keys that arrive as a number and a "~". See docs/terminal.md.
+var tildeKeys = map[string]key{
+	"1": keyHome,
+	"3": keyDelete,
+	"4": keyEnd,
+	"5": keyPageUp,
+	"6": keyPageDown,
+	"7": keyHome,
+	"8": keyEnd,
+}
+
 // escapeKey turns the parameters and the final byte of an escape sequence into a key.
 func escapeKey(params []byte, final byte) key {
-	var k key
+	k := keyUnknown
 	switch final {
 	case 'A':
 		k = keyUp
@@ -90,10 +106,20 @@ func escapeKey(params []byte, final byte) key {
 		k = keyRight
 	case 'D':
 		k = keyLeft
-	default:
-		return keyUnknown
+	case 'H':
+		k = keyHome
+	case 'F':
+		k = keyEnd
+	case '~':
+		number, _, _ := strings.Cut(string(params), ";")
+		if t, ok := tildeKeys[number]; ok {
+			k = t
+		}
 	}
-	return k | modifiers(params)
+	if k.isMove() {
+		return k | modifiers(params)
+	}
+	return k
 }
 
 // modifiers reads the modifier parameter of an escape sequence. See docs/terminal.md.

@@ -31,6 +31,12 @@ few milliseconds instead would make the escape key itself feel slow.
 A key that turns out not to start a sequence is put back, so pressing escape and
 then a letter types that letter.
 
+Home, end, delete and page up or down come as a number and a `~`, `\x1b[3~` for
+delete. Terminals disagree: home is `\x1b[1~`, `\x1b[7~` or `\x1b[H`, end is
+`\x1b[4~`, `\x1b[8~` or `\x1b[F`. led takes all of them. A modifier parameter is
+read for the keys that move the cursor and dropped for delete, which does the
+same thing with or without one.
+
 ## Selection
 
 Selected text gets a blue background. led draws a line column by column. It

@@ -29,6 +29,20 @@ func TestReadKey(t *testing.T) {
 		{name: "ctrl up", in: "\x1b[1;5A", want: keyUp | modCtrl},
 		{name: "ctrl down", in: "\x1b[1;5B", want: keyDown | modCtrl},
 		{name: "shift right", in: "\x1b[1;2C", want: keyRight | modShift},
+		{name: "home", in: "\x1b[H", want: keyHome},
+		{name: "end", in: "\x1b[F", want: keyEnd},
+		{name: "home as a number", in: "\x1b[1~", want: keyHome},
+		{name: "home as the other number", in: "\x1b[7~", want: keyHome},
+		{name: "end as a number", in: "\x1b[4~", want: keyEnd},
+		{name: "end as the other number", in: "\x1b[8~", want: keyEnd},
+		{name: "delete", in: "\x1b[3~", want: keyDelete},
+		{name: "page up", in: "\x1b[5~", want: keyPageUp},
+		{name: "page down", in: "\x1b[6~", want: keyPageDown},
+		{name: "shift home", in: "\x1b[1;2H", want: keyHome | modShift},
+		{name: "ctrl end", in: "\x1b[1;5F", want: keyEnd | modCtrl},
+		{name: "shift page up", in: "\x1b[5;2~", want: keyPageUp | modShift},
+		{name: "delete keeps no modifier", in: "\x1b[3;5~", want: keyDelete},
+		{name: "an unknown number with a tilde", in: "\x1b[9~", want: keyUnknown},
 		{name: "ctrl shift left", in: "\x1b[1;6D", want: keyLeft | modShift | modCtrl},
 		{name: "alt right is an unmodified right", in: "\x1b[1;3C", want: keyRight},
 		{name: "modifier too large to read", in: "\x1b[1;99999999999999999999C", want: keyRight},
@@ -88,7 +102,7 @@ func TestReadKeyKeepsTheKeyAfterAnEscape(t *testing.T) {
 	}
 }
 
-func TestKeyIsArrow(t *testing.T) {
+func TestKeyIsMove(t *testing.T) {
 	tests := []struct {
 		name string
 		k    key
@@ -97,14 +111,20 @@ func TestKeyIsArrow(t *testing.T) {
 		{"up", keyUp, true},
 		{"ctrl left", keyLeft | modCtrl, true},
 		{"ctrl shift right", keyRight | modShift | modCtrl, true},
+		{"home", keyHome, true},
+		{"shift end", keyEnd | modShift, true},
+		{"page up", keyPageUp, true},
+		{"page down", keyPageDown, true},
+		{"delete", keyDelete, false},
 		{"unknown", keyUnknown, false},
 		{"a rune", 'a', false},
 		{"ctrl s", keyCtrlS, false},
+		{"escape", keyEscape, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.k.isArrow(); got != tt.want {
-				t.Errorf("isArrow() = %v, want %v", got, tt.want)
+			if got := tt.k.isMove(); got != tt.want {
+				t.Errorf("isMove() = %v, want %v", got, tt.want)
 			}
 		})
 	}

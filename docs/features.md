@@ -9,6 +9,8 @@
 - The tab key inserts a tab, never spaces. There is no setting for that.
 - Hotkeys are ctrl + a key.
 - Ctrl + left or right moves the cursor a word back or forward.
-- Shift + arrows select text. With ctrl they select a word at a time.
+- Home and end jump to the start and the end of the line, page up and down move a screen at a time. Ctrl does not change what those four do.
+- Delete removes the rune under the cursor. At the end of a line it pulls the next one up.
+- Shift + arrows select text. With ctrl they select a word at a time. Shift works the same with home, end and page up or down.
 - Nothing uses the selection yet. There is no cut, copy or paste.
 - Dark mode only.

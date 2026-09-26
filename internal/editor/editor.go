@@ -127,9 +127,11 @@ func (e *editor) applyKey(k key) error {
 		e.splitLine()
 	case keyBack:
 		e.backspace()
+	case keyDelete:
+		e.deleteRune()
 	default:
 		switch {
-		case k.isArrow():
+		case k.isMove():
 			e.move(k)
 		case k >= ' ' && k <= utf8.MaxRune:
 			e.insert(rune(k))
@@ -211,6 +213,14 @@ func (e *editor) move(k key) {
 			e.cy++
 			e.cx = 0
 		}
+	case keyHome, keyHome | modCtrl:
+		e.cx = 0
+	case keyEnd, keyEnd | modCtrl:
+		e.cx = len(e.lines[e.cy])
+	case keyPageUp, keyPageUp | modCtrl:
+		e.cy = max(e.cy-e.textRows(), 0)
+	case keyPageDown, keyPageDown | modCtrl:
+		e.cy = min(e.cy+e.textRows(), len(e.lines)-1)
 	}
 	if e.cx > len(e.lines[e.cy]) {
 		e.cx = len(e.lines[e.cy])
@@ -263,6 +273,24 @@ func (e *editor) splitLine() {
 
 	e.cy++
 	e.cx = 0
+	e.dirty = true
+}
+
+// deleteRune removes the rune under the cursor. At the end of a line it pulls the
+// next one up, as backspace does at the start of a line.
+func (e *editor) deleteRune() {
+	line := e.lines[e.cy]
+	if e.cx < len(line) {
+		e.lines[e.cy] = append(line[:e.cx], line[e.cx+1:]...)
+		e.dirty = true
+		return
+	}
+	if e.cy == len(e.lines)-1 {
+		return
+	}
+
+	e.lines[e.cy] = append(line, e.lines[e.cy+1]...)
+	e.lines = append(e.lines[:e.cy+1], e.lines[e.cy+2:]...)
 	e.dirty = true
 }
 
