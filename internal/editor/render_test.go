@@ -370,6 +370,31 @@ func TestRenderStatusColors(t *testing.T) {
 	}
 }
 
+func TestRenderStatusUnsavedChanges(t *testing.T) {
+	tests := []struct {
+		name   string
+		dirty  bool
+		prompt bool
+		cols   int
+		want   string
+	}{
+		{"a saved buffer shows the path", false, false, 8, statusBg + "f.txt   " + noBg},
+		{"unsaved changes put a star in front of the path", true, false, 8, statusBg + "*f.txt  " + noBg},
+		{"the path with its star is clipped to the width", true, false, 4, statusBg + "*f.t" + noBg},
+		{"the prompt takes the whole bar", true, true, 8, alertBg + unsavedPrompt[:8] + noBg},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{name: "f.txt", cols: tt.cols, dirty: tt.dirty, prompt: tt.prompt}
+			var b bytes.Buffer
+			e.renderStatus(&b)
+			if got := b.String(); got != tt.want {
+				t.Errorf("renderStatus() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestExpandTabs(t *testing.T) {
 	tests := []struct {
 		name string

@@ -13,7 +13,6 @@ Take a line off this list in the commit that fixes it.
 
 - A resized terminal goes unnoticed. led reads the size once, at startup, and keeps drawing at that one.
 - Wide characters (CJK, emoji) count as one column everywhere, the status bar included. See [terminal.md](terminal.md).
-- The status bar says nothing about unsaved changes, so there is no way to see them before closing.
 
 ## Keys
 

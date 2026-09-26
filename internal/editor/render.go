@@ -66,6 +66,9 @@ func (e *editor) textCols() int {
 // renderStatus draws the status bar over the whole width of the last row.
 func (e *editor) renderStatus(b *bytes.Buffer) {
 	bg, text := statusBg, e.name
+	if e.dirty {
+		text = "*" + text
+	}
 	if e.prompt {
 		bg, text = alertBg, unsavedPrompt
 	}
