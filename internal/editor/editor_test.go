@@ -111,7 +111,8 @@ func TestSaveKeepsTheFinalNewline(t *testing.T) {
 		{"with a final newline", "a\nb\n", []string{"a", "b"}, "a\nb\n"},
 		{"without a final newline", "a\nb", []string{"a", "b"}, "a\nb"},
 		{"empty file stays empty", "", []string{""}, ""},
-		{"text typed into an empty file", "", []string{"hi"}, "hi\n"},
+		{"a file of one newline keeps it", "\n", []string{""}, "\n"},
+		{"text typed into an empty file", "", []string{"hi"}, "hi"},
 		{"a line added without a final newline", "a", []string{"a", "b"}, "a\nb"},
 		{"an empty last line", "a\n", []string{"a", ""}, "a\n\n"},
 	}

@@ -154,7 +154,7 @@ func TestLoopSavesOnCtrlS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := string(data), "hi\n"; got != want {
+	if got, want := string(data), "hi"; got != want {
 		t.Errorf("file = %q, want %q", got, want)
 	}
 }

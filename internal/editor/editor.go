@@ -62,7 +62,7 @@ func newEditor(path string) (*editor, error) {
 		lines:        splitLines(data),
 		rows:         24,
 		cols:         80,
-		finalNewline: len(data) == 0 || strings.HasSuffix(string(data), "\n"),
+		finalNewline: errors.Is(err, fs.ErrNotExist) || strings.HasSuffix(string(data), "\n"),
 	}
 	return e, nil
 }
@@ -194,8 +194,7 @@ func (e *editor) answerPrompt(k key) error {
 	return nil
 }
 
-// save writes the buffer to the file. An empty buffer makes an empty file.
-// See docs/features.md.
+// save writes the buffer to the file. See docs/features.md.
 func (e *editor) save() error {
 	var b strings.Builder
 	for i, line := range e.lines {
@@ -204,7 +203,7 @@ func (e *editor) save() error {
 		}
 		b.WriteString(string(line))
 	}
-	if e.finalNewline && b.Len() > 0 {
+	if e.finalNewline {
 		b.WriteByte('\n')
 	}
 	if err := os.WriteFile(e.path, []byte(b.String()), 0o644); err != nil {
