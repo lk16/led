@@ -25,6 +25,7 @@ type language struct {
 	quotes      string // string delimiters that close on the same line
 	rawQuotes   string // string delimiters that may span lines
 	noEscapes   string // string delimiters after which a backslash is one more rune
+	subst       string // opener of code in a string in rawQuotes, closed by "}"; "" when the language has none
 	lifetimes   bool   // a ' that opens no character literal is a lifetime
 }
 
@@ -55,6 +56,7 @@ var languagesByExt = map[string]*language{
 		blockEnd:    "*/",
 		quotes:      `"'`,
 		rawQuotes:   "`",
+		subst:       "${",
 	},
 	".py": {
 		keywords: keywordSet(`False None True and as assert async await break class continue def del elif else
@@ -94,10 +96,45 @@ type span struct {
 	color string // "" for plain text
 }
 
-// A lineState is what a line leaves open for the next one.
+// Marks in lineState.nest that stand for something else than a string delimiter.
+const (
+	substMark = '$' // the code in a ${...}
+	braceMark = '{' // a { in that code
+)
+
+// A lineState is what a line leaves open for the next one. scan only reads it,
+// so it is safe to keep and to copy. See docs/highlighting.md.
 type lineState struct {
-	comment bool // a block comment
-	quote   rune // a string that may span lines, its delimiter
+	comment bool   // a block comment
+	nest    string // one mark per open string and ${...}, the innermost last
+}
+
+// top is the innermost mark nest holds, 0 when it holds none.
+func (st lineState) top() rune {
+	if st.nest == "" {
+		return 0
+	}
+	return rune(st.nest[len(st.nest)-1])
+}
+
+// inString returns the delimiter of the string st is in, 0 when st is in code.
+func (st lineState) inString() rune {
+	switch top := st.top(); top {
+	case 0, substMark, braceMark:
+		return 0
+	default:
+		return top
+	}
+}
+
+func (st lineState) push(mark rune) lineState {
+	st.nest += string(mark)
+	return st
+}
+
+func (st lineState) pop() lineState {
+	st.nest = st.nest[:len(st.nest)-1]
+	return st
 }
 
 // scan splits line into spans, left to right. st is the state at the start of
@@ -125,13 +162,11 @@ func (l *language) scan(line []rune, st lineState) ([]span, lineState) {
 		emit(end, commentColor)
 		st.comment = !closed
 	}
-	if st.quote != 0 {
-		if scanString(line, 0, st.quote, l.escapes(st.quote), emit) {
-			st.quote = 0
-		}
-	}
-
 	for i < len(line) {
+		if st.inString() != 0 {
+			i, st = l.scanString(line, i, st, emit)
+			continue
+		}
 		switch {
 		case l.blockStart != "" && holds(line, i, l.blockStart):
 			end, closed := until(line, i+len(l.blockStart), l.blockEnd)
@@ -143,11 +178,20 @@ func (l *language) scan(line []rune, st lineState) ([]span, lineState) {
 			i = wordEnd(line, i+1)
 		case strings.ContainsRune(l.quotes, line[i]) || strings.ContainsRune(l.rawQuotes, line[i]):
 			quote := line[i]
-			raw := strings.ContainsRune(l.rawQuotes, quote)
-			closed := scanString(line, i+1, quote, l.escapes(quote), emit)
-			if raw && !closed {
-				st.quote = quote
+			opened := st.push(quote)
+			i, st = l.scanString(line, i+1, opened, emit)
+			if st == opened && !strings.ContainsRune(l.rawQuotes, quote) {
+				st = st.pop() // a string that closes with its line
 			}
+		case line[i] == '{' && st.nest != "":
+			st, i = st.push(braceMark), i+1
+		case line[i] == '}' && st.nest != "":
+			if st.top() == substMark {
+				emit(i+1, stringColor)
+			} else {
+				i++
+			}
+			st = st.pop()
 		case isDigit(line[i]) && (i == 0 || !isWordRune(line[i-1])):
 			emit(numberEnd(line, i), numberColor)
 		case isWordRune(line[i]):
@@ -189,10 +233,14 @@ func until(line []rune, i int, s string) (int, bool) {
 	return len(line), false
 }
 
-// scanString emits the spans of the string that runs from i to its closing
-// quote and reports whether the line holds that quote. With escapes a backslash
-// starts an escape sequence, which gets its own color.
-func scanString(line []rune, i int, quote rune, escapes bool, emit func(end int, color string)) bool {
+// scanString emits the spans of the string st is in, from i on. It stops after
+// the closing quote, after the opener of a ${...}, or at the end of the line, and
+// returns where it stopped and the state there. With escapes a backslash starts
+// an escape sequence, which gets its own color.
+func (l *language) scanString(line []rune, i int, st lineState, emit func(end int, color string)) (int, lineState) {
+	quote := st.inString()
+	escapes := l.escapes(quote)
+	subst := l.subst != "" && strings.ContainsRune(l.rawQuotes, quote)
 	for ; i < len(line); i++ {
 		switch {
 		case escapes && line[i] == '\\':
@@ -202,11 +250,15 @@ func scanString(line []rune, i int, quote rune, escapes bool, emit func(end int,
 			i--
 		case line[i] == quote:
 			emit(i+1, stringColor)
-			return true
+			return i + 1, st.pop()
+		case subst && holds(line, i, l.subst):
+			end := i + len(l.subst)
+			emit(end, stringColor)
+			return end, st.push(substMark)
 		}
 	}
 	emit(len(line), stringColor)
-	return false
+	return len(line), st
 }
 
 // charLiteral reports whether the quote at i opens a character literal: one

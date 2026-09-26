@@ -13,8 +13,9 @@ A file with any other extension gets no highlighting. led always opens a named f
 
 A `language` in `internal/editor/highlight.go` holds the keyword list, the line
 comment marker, the block comment markers, the string delimiters, which of those
-delimiters open a string without escapes, and whether the language has lifetimes.
-A new language is a new entry in that table, nothing else.
+delimiters open a string without escapes, the opener of code in a string, and
+whether the language has lifetimes. A new language is a new entry in that table,
+nothing else.
 
 ## Colors
 
@@ -45,7 +46,8 @@ does not.
 - A string runs to its closing quote. Inside `"` and `'` a backslash escapes the next character.
 - An escape sequence is a backslash and what belongs to it: `\x` and two hex digits, `\u` and four, `\U` and eight, `\u{...}` up to the brace, up to three octal digits, or one other character. Fewer digits than that stop it, so `\xz` is just `\x`.
 - A `'` in a language with lifetimes, so Rust, opens a string only when it closes right after one character or one escape: `'a'`, `'\n'`, `'\''`, `'\u{1F600}'`. Anything else is a lifetime, `&'a str` or `'static`, and stays plain. Go and Python have no lifetimes, so there a `'` always opens a string.
-- Which strings have escapes is per language, not per delimiter. A Go raw string, `` `a\n` ``, has none, a JavaScript template literal has them. `${...}` in a template literal is not handled.
+- Which strings have escapes is per language, not per delimiter. A Go raw string, `` `a\n` ``, has none, a JavaScript template literal has them.
+- In a JavaScript template literal the `${` and the `}` of a `${...}` belong to the string, what is between them is code. So a keyword, a number, a string or a bracket in it gets its own color. Nested braces, `${ {a: 1} }`, and nested template literals, `` ${`a${b}c`} ``, work. Which opener does this is per language: Go has none, so `` `a${b}` `` is one string.
 
 ## Brackets
 
@@ -66,15 +68,22 @@ while it is being fixed.
 Only code counts. A bracket in a string, a comment or an escape sequence is
 skipped, and with the cursor on one of those nothing is colored. The scan asks
 the same line scanner that colors the text and takes every rune it leaves plain.
-A keyword or a number can never hold a bracket, so plain is the whole test.
+A keyword or a number can never hold a bracket, so plain is the whole test. The
+braces of a `${...}` are part of the string, so they do not count; the brackets in
+the code between them do.
 
 The scan walks the buffer on every key press. See [bugs.md](bugs.md).
 
 ## Over more than one line
 
 A block comment and a string in backticks, so a Go raw string and a JavaScript
-template literal, may span lines. led scans from the first line of the file down
-to the first line on screen to know what is still open there.
+template literal, may span lines, and so may a `${...}` in such a template
+literal. led scans from the first line of the file down to the first line on
+screen to know what is still open there.
+
+What a line leaves open is a `lineState`: a flag for a block comment and a string
+with one mark per open string and `${...}`, the innermost last. It is a value led
+only reads, so it is safe to keep and to copy.
 
 Nothing else spans lines. A `"` string that is not closed ends with its line, and
 so does a Rust lifetime, which opens no string at all. Python's triple quotes are

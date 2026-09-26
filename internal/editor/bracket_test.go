@@ -139,6 +139,18 @@ func TestMatchBracket(t *testing.T) {
 			name: "a bracket in a template literal is left alone", path: "app.js", lines: []string{"s = `(`"},
 			cursor: position{0, 5},
 		},
+		{
+			name: "the brace that opens a substitution is left alone", path: "app.js", lines: []string{"s = `${a}`"},
+			cursor: position{0, 6},
+		},
+		{
+			name: "brackets in a substitution match", path: "app.js", lines: []string{"s = `${f(a)}`"},
+			cursor: position{0, 8}, want: position{0, 10}, wantMatch: true, wantColor: parenColor,
+		},
+		{
+			name: "braces in a substitution match", path: "app.js", lines: []string{"s = `${ {a} }`"},
+			cursor: position{0, 8}, want: position{0, 10}, wantMatch: true, wantColor: braceColor,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

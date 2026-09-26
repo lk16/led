@@ -311,6 +311,47 @@ func TestScanTemplateLiteralOverLinesHasEscapes(t *testing.T) {
 	}
 }
 
+func TestScanTemplateSubstitutions(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		line string
+		want string
+	}{
+		{"a name between the braces", "app.js", "`a${b}c`", str("`a${") + "b" + str("}c`")},
+		{
+			"numbers between the braces", "app.js", "`a${1 + 2}c`",
+			stringColor + "`a${" + numberColor + "1" + reset + " + " + numberColor + "2" + stringColor + "}c`" + reset,
+		},
+		{
+			"a keyword between the braces", "app.js", "`${null}`",
+			stringColor + "`${" + keywordColor + "null" + stringColor + "}`" + reset,
+		},
+		{"a string between the braces", "app.js", "`${\"a\" + b}`", str("`${\"a\"") + " + b" + str("}`")},
+		{"nested braces", "app.js", "`${ {a: 1} }`", str("`${") + " {a: " + num("1") + "} " + str("}`")},
+		{"a nested template literal", "app.js", "`${`x${y}z`}`", str("`${`x${") + "y" + str("}z`}`")},
+		{
+			"a comment between the braces", "app.js", "`${b /* c */}`",
+			stringColor + "`${" + reset + "b " + commentColor + "/* c */" + stringColor + "}`" + reset,
+		},
+		{
+			"an escaped opener stays a string", "app.js", "`a\\${b}c`",
+			stringColor + "`a" + escapeColor + "\\$" + stringColor + "{b}c`" + reset,
+		},
+		{"braces that never close", "app.js", "`a${b", str("`a${") + "b"},
+		{"a stray closing brace ends the substitution", "app.js", "`${}`", str("`${}`")},
+		{"a plain string keeps the braces", "app.js", `x = "a${b}c"`, `x = ` + str(`"a${b}c"`)},
+		{"go has no substitutions", "main.go", "s := `a${b}c`", "s := " + str("`a${b}c`")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := colored(tt.path, tt.line); got != tt.want {
+				t.Errorf("colored(%q) for %s = %q, want %q", tt.line, tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestScanComments(t *testing.T) {
 	tests := []struct {
 		name string
@@ -404,6 +445,27 @@ func TestScanAcrossLines(t *testing.T) {
 			path:  "app.js",
 			lines: []string{"s = `a", "b` + c"},
 			want:  []string{"s = " + str("`a"), str("b`") + " + c"},
+		},
+		{
+			name:  "a substitution on the second line of a template literal",
+			path:  "app.js",
+			lines: []string{"s = `a", "b${c}d`"},
+			want:  []string{"s = " + str("`a"), str("b${") + "c" + str("}d`")},
+		},
+		{
+			name:  "a substitution goes on over lines",
+			path:  "app.js",
+			lines: []string{"s = `a${1", "+ 2}b`"},
+			want: []string{
+				"s = " + stringColor + "`a${" + numberColor + "1" + reset,
+				"+ " + numberColor + "2" + stringColor + "}b`" + reset,
+			},
+		},
+		{
+			name:  "a template literal in a substitution goes on over lines",
+			path:  "app.js",
+			lines: []string{"s = `a${`b", "c`}d`"},
+			want:  []string{"s = " + str("`a${`b"), str("c`}d`")},
 		},
 		{
 			name:  "an unclosed plain string ends with its line",
