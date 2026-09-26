@@ -1,9 +1,9 @@
 # Highlighting
 
-led colors keywords, strings, comments and numbers, plus the bracket under the
-cursor and the one it matches. A hardcoded table per
-language, picked by file extension. No highlighting library like chroma, no
-grammar files.
+led colors keywords, strings, comments, numbers and the escape sequences in a
+string, plus the bracket under the cursor and the one it matches. A hardcoded
+table per language, picked by file extension. No highlighting library like
+chroma, no grammar files.
 
 Languages: Go (`.go`), JavaScript (`.js`), Python (`.py`), Rust (`.rs`).
 
@@ -20,12 +20,13 @@ language is a new entry in that table, nothing else.
 Monokai. Terminals disagree on what their 16 named colors look like, so led
 writes the Monokai values as 24-bit color, `\x1b[38;2;R;G;Bm`.
 
-| Part     | Color            |
-| -------- | ---------------- |
-| Keywords | pink `#F92672`   |
-| Strings  | yellow `#E6DB74` |
-| Comments | gray `#75715E`   |
-| Numbers  | purple `#AE81FF` |
+| Part              | Color            |
+| ----------------- | ---------------- |
+| Keywords          | pink `#F92672`   |
+| Strings           | yellow `#E6DB74` |
+| Comments          | gray `#75715E`   |
+| Numbers           | purple `#AE81FF` |
+| Escape sequences  | purple `#AE81FF` |
 | Matching brackets | orange `#FD971F` |
 
 Only the text is colored. led sets no background, so the terminal theme keeps
@@ -37,6 +38,7 @@ does not.
 - A keyword is a whole word: letters, digits and `_` around it make it plain text again. Keywords in a string or a comment are plain.
 - A number is a word that starts with a digit, plus a dot between digits. So `0xff`, `1e9` and `3.14` are numbers, and `x2` is not.
 - A string runs to its closing quote. Inside `"` and `'` a backslash escapes the next character.
+- An escape sequence is a backslash and what belongs to it: `\x` and two hex digits, `\u` and four, `\U` and eight, `\u{...}` up to the brace, up to three octal digits, or one other character. Fewer digits than that stop it, so `\xz` is just `\x`. A string in backticks has no escapes.
 
 ## Brackets
 

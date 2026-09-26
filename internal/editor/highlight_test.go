@@ -140,7 +140,10 @@ func TestScanStrings(t *testing.T) {
 		{"a string", "main.go", `x := "a b"`, `x := ` + str(`"a b"`)},
 		{"a keyword in a string stays plain", "main.go", `s := "func"`, `s := ` + str(`"func"`)},
 		{"a comment in a string stays a string", "main.go", `s := "// no"`, `s := ` + str(`"// no"`)},
-		{"an escaped quote does not end a string", "main.go", `"a\"b" c`, str(`"a\"b"`) + " c"},
+		{
+			"an escaped quote does not end a string", "main.go", `"a\"b" c`,
+			stringColor + `"a` + escapeColor + `\"` + stringColor + `b"` + reset + " c",
+		},
 		{"an unclosed string runs to the end of the line", "main.go", `s := "ab`, `s := ` + str(`"ab`)},
 		{"two strings", "main.go", `"a" + "b"`, str(`"a"`) + " + " + str(`"b"`)},
 		{"a rune literal", "main.go", `c := 'x'`, `c := ` + str(`'x'`)},
@@ -153,6 +156,93 @@ func TestScanStrings(t *testing.T) {
 				t.Errorf("colored(%q) = %q, want %q", tt.line, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestScanEscapes(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		line string
+		want string
+	}{
+		{
+			"an escape between text", "main.go", `s := "a\nb"`,
+			`s := ` + stringColor + `"a` + escapeColor + `\n` + stringColor + `b"` + reset,
+		},
+		{
+			"a string that is only an escape", "main.go", `"\n"`,
+			stringColor + `"` + escapeColor + `\n` + stringColor + `"` + reset,
+		},
+		{
+			"two escapes in a row", "main.go", `"\n\t"`,
+			stringColor + `"` + escapeColor + `\n\t` + stringColor + `"` + reset,
+		},
+		{
+			"an escaped backslash", "main.go", `"a\\b"`,
+			stringColor + `"a` + escapeColor + `\\` + stringColor + `b"` + reset,
+		},
+		{
+			"a hex escape takes its digits", "main.go", `"\x41!"`,
+			stringColor + `"` + escapeColor + `\x41` + stringColor + `!"` + reset,
+		},
+		{
+			"a short unicode escape takes four digits", "main.go", `"\u00e9!"`,
+			stringColor + `"` + escapeColor + `\u00e9` + stringColor + `!"` + reset,
+		},
+		{
+			"a long unicode escape takes eight digits", "main.go", `"\U0001f600!"`,
+			stringColor + `"` + escapeColor + `\U0001f600` + stringColor + `!"` + reset,
+		},
+		{
+			"an octal escape takes three digits", "main.go", `"\1014"`,
+			stringColor + `"` + escapeColor + `\101` + stringColor + `4"` + reset,
+		},
+		{
+			"an octal escape stops at a non octal digit", "main.go", `"\08"`,
+			stringColor + `"` + escapeColor + `\0` + stringColor + `8"` + reset,
+		},
+		{
+			"a hex escape without digits is just the letter", "main.go", `"\xz"`,
+			stringColor + `"` + escapeColor + `\x` + stringColor + `z"` + reset,
+		},
+		{
+			"a braced unicode escape runs to its closing brace", "lib.rs", `"\u{1F600}!"`,
+			stringColor + `"` + escapeColor + `\u{1F600}` + stringColor + `!"` + reset,
+		},
+		{
+			"an escape in a rune literal", "main.go", `c := '\n'`,
+			`c := ` + stringColor + `'` + escapeColor + `\n` + stringColor + `'` + reset,
+		},
+		{
+			"a backslash at the end of an unclosed string", "main.go", `"a\`,
+			stringColor + `"a` + escapeColor + `\` + reset,
+		},
+		{"a raw string has no escapes", "main.go", "`a\nb`", str("`a\nb`")},
+		{"a backslash outside a string stays plain", "main.go", `a \ b`, `a \ b`},
+		{"a backslash in a comment stays a comment", "main.go", `// a\nb`, comment(`// a\nb`)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := colored(tt.path, tt.line); got != tt.want {
+				t.Errorf("colored(%q) = %q, want %q", tt.line, got, tt.want)
+			}
+		})
+	}
+}
+
+// A raw string has no escapes, on its later lines either.
+func TestScanRawStringOverLinesHasNoEscapes(t *testing.T) {
+	lines := []string{"s = `a", `b\nc` + "`"}
+	want := []string{
+		"s = " + str("`a"),
+		stringColor + `b\nc` + "`" + reset,
+	}
+	got := coloredLines("app.js", lines)
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("line %d = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 

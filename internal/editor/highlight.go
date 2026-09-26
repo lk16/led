@@ -13,6 +13,9 @@ const (
 	numberColor  = "\x1b[38;2;174;129;255m" // purple
 )
 
+// escapeColor is the purple of numbers. See docs/highlighting.md.
+const escapeColor = numberColor
+
 // A language is all led knows about one kind of file. See docs/highlighting.md.
 type language struct {
 	keywords    map[string]bool
@@ -101,7 +104,9 @@ func (l *language) scan(line []rune, st lineState) ([]span, lineState) {
 		if plain < i {
 			spans = append(spans, span{i, ""})
 		}
-		spans = append(spans, span{end, color})
+		if end > i {
+			spans = append(spans, span{end, color})
+		}
 		plain, i = end, end
 	}
 
@@ -111,9 +116,7 @@ func (l *language) scan(line []rune, st lineState) ([]span, lineState) {
 		st.comment = !closed
 	}
 	if st.quote != 0 {
-		end, closed := untilQuote(line, 0, st.quote, false)
-		emit(end, stringColor)
-		if closed {
+		if scanString(line, 0, st.quote, false, emit) {
 			st.quote = 0
 		}
 	}
@@ -129,8 +132,7 @@ func (l *language) scan(line []rune, st lineState) ([]span, lineState) {
 		case strings.ContainsRune(l.quotes, line[i]) || strings.ContainsRune(l.rawQuotes, line[i]):
 			quote := line[i]
 			raw := strings.ContainsRune(l.rawQuotes, quote)
-			end, closed := untilQuote(line, i+1, quote, !raw)
-			emit(end, stringColor)
+			closed := scanString(line, i+1, quote, !raw, emit)
 			if raw && !closed {
 				st.quote = quote
 			}
@@ -175,18 +177,56 @@ func until(line []rune, i int, s string) (int, bool) {
 	return len(line), false
 }
 
-// untilQuote is until for a closing quote. With escapes, a backslash makes the
-// rune after it part of the string.
-func untilQuote(line []rune, i int, quote rune, escapes bool) (int, bool) {
+// scanString emits the spans of the string that runs from i to its closing
+// quote and reports whether the line holds that quote. With escapes a backslash
+// starts an escape sequence, which gets its own color.
+func scanString(line []rune, i int, quote rune, escapes bool, emit func(end int, color string)) bool {
 	for ; i < len(line); i++ {
 		switch {
 		case escapes && line[i] == '\\':
-			i++
+			emit(i, stringColor)
+			i = escapeEnd(line, i)
+			emit(i, escapeColor)
+			i--
 		case line[i] == quote:
-			return i + 1, true
+			emit(i+1, stringColor)
+			return true
 		}
 	}
-	return len(line), false
+	emit(len(line), stringColor)
+	return false
+}
+
+// hexEscapes are the escapes that take a fixed number of hex digits.
+var hexEscapes = map[rune]int{'x': 2, 'u': 4, 'U': 8}
+
+// escapeEnd returns the index just past the escape sequence that starts with the
+// backslash at i. See docs/highlighting.md.
+func escapeEnd(line []rune, i int) int {
+	i++
+	if i == len(line) {
+		return i
+	}
+	if digits, ok := hexEscapes[line[i]]; ok {
+		i++
+		if i < len(line) && line[i] == '{' {
+			end, _ := until(line, i, "}")
+			return end
+		}
+		return runEnd(line, i, digits, isHexDigit)
+	}
+	if isOctalDigit(line[i]) {
+		return runEnd(line, i, 3, isOctalDigit)
+	}
+	return i + 1
+}
+
+// runEnd returns the index just past the at most n runes from i that are in the class.
+func runEnd(line []rune, i, n int, in func(rune) bool) int {
+	for ; n > 0 && i < len(line) && in(line[i]); n-- {
+		i++
+	}
+	return i
 }
 
 // numberEnd returns the index just past the number that starts at i.
@@ -213,4 +253,12 @@ func wordEnd(line []rune, i int) int {
 
 func isDigit(r rune) bool {
 	return r >= '0' && r <= '9'
+}
+
+func isHexDigit(r rune) bool {
+	return isDigit(r) || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F'
+}
+
+func isOctalDigit(r rune) bool {
+	return r >= '0' && r <= '7'
 }
