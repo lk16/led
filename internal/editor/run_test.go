@@ -130,6 +130,77 @@ func TestLoopClearsTheAlertWithoutAKeyPress(t *testing.T) {
 	}
 }
 
+// The same key pressed again puts the error up for the whole three seconds, not
+// for what is left of the first press.
+func TestLoopGivesARepeatedErrorTheWholeTime(t *testing.T) {
+	defer func(d time.Duration) { alertTimeout = d }(alertTimeout)
+	alertTimeout = 200 * time.Millisecond
+
+	e := newTestEditor(t, "a\n")
+	e.rows, e.cols = 2, 40
+	keys, writeKey := io.Pipe()
+	drawn := make(frames, 16)
+	done := runLoopInBackground(e, keys, drawn)
+
+	alert := alertBg + "ctrl + b is not a key led knows"
+	press := func() {
+		if _, err := writeKey.Write([]byte{0x02}); err != nil {
+			t.Fatal(err)
+		}
+		drawn.waitFor(t, "with the error", func(frame string) bool { return strings.Contains(frame, alert) })
+	}
+	press()
+	time.Sleep(alertTimeout * 3 / 4)
+	press()
+
+	start := time.Now()
+	drawn.waitFor(t, "without the error", func(frame string) bool { return !strings.Contains(frame, alert) })
+	if up := time.Since(start); up < alertTimeout/2 {
+		t.Errorf("the error went away %v after the second press, want at least %v", up, alertTimeout/2)
+	}
+
+	if _, err := writeKey.Write([]byte{0x17}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("loop: %v", err)
+	}
+	if err := writeKey.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A key press takes the error away, so it never sits under what is typed.
+func TestLoopTakesTheErrorAwayOnAKeyPress(t *testing.T) {
+	e := newTestEditor(t, "a\n")
+	e.rows, e.cols = 2, 40
+	keys, writeKey := io.Pipe()
+	drawn := make(frames, 16)
+	done := runLoopInBackground(e, keys, drawn)
+
+	alert := alertBg + "ctrl + b is not a key led knows"
+	if _, err := writeKey.Write([]byte{0x02}); err != nil {
+		t.Fatal(err)
+	}
+	drawn.waitFor(t, "with the error", func(frame string) bool { return strings.Contains(frame, alert) })
+
+	// A move, so the three seconds of the error cannot be what takes it away.
+	if _, err := writeKey.Write([]byte("\x1b[D")); err != nil {
+		t.Fatal(err)
+	}
+	drawn.waitFor(t, "without the error", func(frame string) bool { return !strings.Contains(frame, alert) })
+
+	if _, err := writeKey.Write([]byte{0x17}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("loop: %v", err)
+	}
+	if err := writeKey.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLoopTypesAndQuits(t *testing.T) {
 	e := newTestEditor(t, "")
 	e.rows, e.cols = 3, 20

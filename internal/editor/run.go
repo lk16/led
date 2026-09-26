@@ -86,8 +86,9 @@ func (e *editor) readSize() {
 }
 
 // loop draws the screen and handles keys until the user closes the editor. It also
-// redraws when the terminal is resized and when an error in the status bar has
-// been up long enough.
+// redraws when the terminal is resized and when an error in the status bar has been
+// up long enough. A key press takes an error away and may put a new one up.
+// See docs/features.md.
 func (e *editor) loop(in *bufio.Reader, out *bufio.Writer) error {
 	keys := readKeys(in)
 	var alertOver <-chan time.Time
@@ -108,11 +109,11 @@ func (e *editor) loop(in *bufio.Reader, out *bufio.Writer) error {
 				}
 				return press.err
 			}
-			alert := e.alert
+			e.alert, alertOver = "", nil
 			if err := e.handleKey(press.key); err != nil {
 				return err
 			}
-			if e.alert != alert {
+			if e.alert != "" {
 				alertOver = time.After(alertTimeout)
 			}
 		case <-e.resized:
