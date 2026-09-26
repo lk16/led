@@ -9,7 +9,7 @@
 - Colors keywords, strings, comments, numbers and escape sequences for Go, JavaScript, Python and Rust. See [highlighting.md](highlighting.md).
 - Colors the bracket under the cursor and the one it matches, a color per kind. A bracket without a match, or with one of the wrong kind, turns red. Brackets in strings and comments do not count.
 - The tab key inserts a tab, never spaces. There is no setting for that.
-- Hotkeys are ctrl + a key.
+- Hotkeys are ctrl + a key. Ctrl + s saves and ctrl + w closes.
 - A ctrl + key combination led has no binding for puts an error in the status bar, like `ctrl + b is not a key led knows`. It goes away after three seconds, or at the next key press. See [terminal.md](terminal.md).
 - Ctrl + left or right moves the cursor a word back or forward.
 - Home and end jump to the start and the end of the line, page up and down move a screen at a time. Ctrl + home and ctrl + end jump to the start and the end of the file. Ctrl + page up and ctrl + page down do nothing.

@@ -39,7 +39,9 @@ arrive in pieces, and then led reads the escape key and types the rest. Waiting 
 few milliseconds instead would make the escape key itself feel slow.
 
 A key that turns out not to start a sequence is put back, so pressing escape and
-then a letter types that letter.
+then a letter types that letter. The `O` of the `\x1bO` form is the one letter that
+is not put back: it is read as the start of a sequence, and the key behind it with
+it.
 
 Ctrl + a letter arrives as one control byte, so led knows the combination and can
 say in the status bar that it has no binding for it. Ctrl with an arrow, home, end
