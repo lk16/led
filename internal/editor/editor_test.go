@@ -281,8 +281,11 @@ func TestMove(t *testing.T) {
 		{"end", []string{"abc"}, 1, 0, keyEnd, 3, 0},
 		{"end at the line end", []string{"abc"}, 3, 0, keyEnd, 3, 0},
 		{"end on an empty line", []string{""}, 0, 0, keyEnd, 0, 0},
-		{"ctrl home moves like home", []string{"abc"}, 2, 0, keyHome | modCtrl, 0, 0},
-		{"ctrl end moves like end", []string{"abc"}, 1, 0, keyEnd | modCtrl, 3, 0},
+		{"ctrl home goes to the start of the file", []string{"abc", "de"}, 1, 1, keyHome | modCtrl, 0, 0},
+		{"ctrl home at the start of the file", []string{"abc", "de"}, 0, 0, keyHome | modCtrl, 0, 0},
+		{"ctrl end goes to the end of the file", []string{"abc", "de"}, 1, 0, keyEnd | modCtrl, 2, 1},
+		{"ctrl end at the end of the file", []string{"abc", "de"}, 2, 1, keyEnd | modCtrl, 2, 1},
+		{"ctrl end on an empty last line", []string{"abc", ""}, 1, 0, keyEnd | modCtrl, 0, 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -341,7 +344,8 @@ func TestMoveByPage(t *testing.T) {
 		{"page up", 7, keyPageUp, 4},
 		{"page up past the first line", 2, keyPageUp, 0},
 		{"page up on the first line", 0, keyPageUp, 0},
-		{"ctrl page down moves like page down", 0, keyPageDown | modCtrl, 3},
+		{"ctrl page down does not move", 0, keyPageDown | modCtrl, 0},
+		{"ctrl page up does not move", 7, keyPageUp | modCtrl, 7},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -349,6 +353,27 @@ func TestMoveByPage(t *testing.T) {
 			e.move(tt.k)
 			if e.cy != tt.wantCy {
 				t.Errorf("cy = %d, want %d", e.cy, tt.wantCy)
+			}
+		})
+	}
+}
+
+// Ctrl + page up or down leaves the cursor where it is, column included, even
+// while a run of moves between lines aims for another column.
+func TestMoveCtrlPageKeysDoNothing(t *testing.T) {
+	tests := []struct {
+		name string
+		k    key
+	}{
+		{"ctrl page up", keyPageUp | modCtrl},
+		{"ctrl page down", keyPageDown | modCtrl},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{lines: toLines([]string{"abcde", "xyz", "abcde"}), cx: 1, cy: 1, goal: 4, rows: 4}
+			e.move(tt.k)
+			if want := (position{1, 1}); e.cursor() != want {
+				t.Errorf("cursor = %v, want %v", e.cursor(), want)
 			}
 		})
 	}
@@ -863,6 +888,18 @@ func TestSelectWithShiftArrows(t *testing.T) {
 		{
 			name: "back at the anchor nothing is selected", lines: []string{"abc"},
 			keys: []key{keyRight | modShift, keyLeft | modShift}, wantStart: position{0, 0}, wantEnd: position{0, 0}, wantSelecting: true,
+		},
+		{
+			name: "ctrl shift home selects to the start of the file", lines: []string{"ab", "cd"}, cx: 1, cy: 1,
+			keys: []key{keyHome | modShift | modCtrl}, wantStart: position{0, 0}, wantEnd: position{1, 1}, wantSelecting: true,
+		},
+		{
+			name: "ctrl shift end selects to the end of the file", lines: []string{"ab", "cd"}, cx: 1,
+			keys: []key{keyEnd | modShift | modCtrl}, wantStart: position{0, 1}, wantEnd: position{1, 2}, wantSelecting: true,
+		},
+		{
+			name: "ctrl shift page up selects nothing new", lines: []string{"ab", "cd"}, cx: 1, cy: 1,
+			keys: []key{keyPageUp | modShift | modCtrl}, wantStart: position{1, 1}, wantEnd: position{1, 1}, wantSelecting: true,
 		},
 		{
 			name: "an arrow without shift drops the selection", lines: []string{"abc"},

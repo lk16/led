@@ -193,7 +193,8 @@ func (e *editor) save() error {
 
 // move moves the cursor. Shift does not change where it lands, only what gets
 // selected. A move between lines lands on the column the cursor wants, clipped to
-// the line it lands in. See docs/features.md.
+// the line it lands in. Ctrl + page up or down moves nothing at all.
+// See docs/features.md.
 func (e *editor) move(k key) {
 	switch k &^ modShift {
 	case keyUp, keyUp | modCtrl:
@@ -236,14 +237,21 @@ func (e *editor) move(k key) {
 			e.cy++
 			e.cx = 0
 		}
-	case keyHome, keyHome | modCtrl:
+	case keyHome:
 		e.cx = 0
-	case keyEnd, keyEnd | modCtrl:
+	case keyEnd:
 		e.cx = len(e.lines[e.cy])
-	case keyPageUp, keyPageUp | modCtrl:
+	case keyHome | modCtrl:
+		e.cx, e.cy = 0, 0
+	case keyEnd | modCtrl:
+		e.cy = len(e.lines) - 1
+		e.cx = len(e.lines[e.cy])
+	case keyPageUp:
 		e.cy = max(e.cy-e.textRows(), 0)
-	case keyPageDown, keyPageDown | modCtrl:
+	case keyPageDown:
 		e.cy = min(e.cy+e.textRows(), len(e.lines)-1)
+	case keyPageUp | modCtrl, keyPageDown | modCtrl:
+		return
 	}
 	if k.isVertical() {
 		e.cx = e.goal
