@@ -24,68 +24,132 @@ func unmatched(text string) string {
 
 func TestMatchBracket(t *testing.T) {
 	tests := []struct {
-		name   string
-		lines  []string
-		cursor position
-		want   position
-		wantOK bool
+		name      string
+		path      string
+		lines     []string
+		cursor    position
+		want      position
+		wantMatch bool
+		wantColor string
 	}{
 		{name: "not on a bracket", lines: []string{"abc"}, cursor: position{0, 1}},
 		{name: "past the end of the line", lines: []string{"(a)"}, cursor: position{0, 3}},
 		{name: "on an empty line", lines: []string{""}, cursor: position{0, 0}},
 		{
 			name: "forward to the closing bracket", lines: []string{"f(a)"},
-			cursor: position{0, 1}, want: position{0, 3}, wantOK: true,
+			cursor: position{0, 1}, want: position{0, 3}, wantMatch: true, wantColor: parenColor,
 		},
 		{
 			name: "back to the opening bracket", lines: []string{"f(a)"},
-			cursor: position{0, 3}, want: position{0, 1}, wantOK: true,
+			cursor: position{0, 3}, want: position{0, 1}, wantMatch: true, wantColor: parenColor,
 		},
 		{
 			name: "over a nested pair", lines: []string{"(f(a))"},
-			cursor: position{0, 0}, want: position{0, 5}, wantOK: true,
+			cursor: position{0, 0}, want: position{0, 5}, wantMatch: true, wantColor: parenColor,
 		},
 		{
 			name: "the inner pair of a nest", lines: []string{"(f(a))"},
-			cursor: position{0, 2}, want: position{0, 4}, wantOK: true,
+			cursor: position{0, 2}, want: position{0, 4}, wantMatch: true, wantColor: parenColor,
+		},
+		{
+			name: "over a nested pair of another kind", lines: []string{"f(a[0])"},
+			cursor: position{0, 1}, want: position{0, 6}, wantMatch: true, wantColor: parenColor,
 		},
 		{
 			name: "square brackets", lines: []string{"a[0]"},
-			cursor: position{0, 1}, want: position{0, 3}, wantOK: true,
+			cursor: position{0, 1}, want: position{0, 3}, wantMatch: true, wantColor: squareColor,
 		},
 		{
 			name: "curly brackets", lines: []string{"{}"},
-			cursor: position{0, 1}, want: position{0, 0}, wantOK: true,
+			cursor: position{0, 1}, want: position{0, 0}, wantMatch: true, wantColor: braceColor,
 		},
-		{name: "no closing bracket", lines: []string{"f(a"}, cursor: position{0, 1}},
-		{name: "no opening bracket", lines: []string{"a)"}, cursor: position{0, 1}},
-		{name: "another kind of bracket does not match", lines: []string{"(]"}, cursor: position{0, 0}},
+		{
+			name: "no closing bracket", lines: []string{"f(a"},
+			cursor: position{0, 1}, wantColor: unmatchedColor,
+		},
+		{
+			name: "no opening bracket", lines: []string{"a)"},
+			cursor: position{0, 1}, wantColor: unmatchedColor,
+		},
+		{
+			name: "another kind of bracket closes it", lines: []string{"(]"},
+			cursor: position{0, 0}, wantColor: unmatchedColor,
+		},
+		{
+			name: "a closing bracket of another kind than the open one", lines: []string{"(]"},
+			cursor: position{0, 1}, wantColor: unmatchedColor,
+		},
+		{
+			name: "a pair that crosses another pair", lines: []string{"([)]"},
+			cursor: position{0, 0}, wantColor: unmatchedColor,
+		},
+		{
+			name: "an unclosed bracket of another kind inside", lines: []string{"f([a)"},
+			cursor: position{0, 1}, wantColor: unmatchedColor,
+		},
+		{
+			name: "the closing bracket over an unclosed one of another kind", lines: []string{"f([a)"},
+			cursor: position{0, 4}, wantColor: unmatchedColor,
+		},
+		{
+			name: "a stray closing bracket does not break a pair around it", lines: []string{"f(a] b)"},
+			cursor: position{0, 1}, want: position{0, 6}, wantMatch: true, wantColor: parenColor,
+		},
 		{
 			name: "over lines", lines: []string{"f(", "\ta,", ")"},
-			cursor: position{0, 1}, want: position{2, 0}, wantOK: true,
+			cursor: position{0, 1}, want: position{2, 0}, wantMatch: true, wantColor: parenColor,
 		},
 		{
 			name: "back over lines", lines: []string{"f(", "\ta,", ")"},
-			cursor: position{2, 0}, want: position{0, 1}, wantOK: true,
+			cursor: position{2, 0}, want: position{0, 1}, wantMatch: true, wantColor: parenColor,
 		},
 		{
 			name: "over an empty line", lines: []string{"f(", "", ")"},
-			cursor: position{0, 1}, want: position{2, 0}, wantOK: true,
+			cursor: position{0, 1}, want: position{2, 0}, wantMatch: true, wantColor: parenColor,
 		},
 		{
 			name: "back over an empty line", lines: []string{"f(", "", ")"},
-			cursor: position{2, 0}, want: position{0, 1}, wantOK: true,
+			cursor: position{2, 0}, want: position{0, 1}, wantMatch: true, wantColor: parenColor,
 		},
 		{
-			name: "a pair in a string counts", lines: []string{`s := "(" + ")"`},
-			cursor: position{0, 6}, want: position{0, 12}, wantOK: true,
+			name: "a bracket in a string is left alone", lines: []string{`s := "(" + ")"`},
+			cursor: position{0, 6},
+		},
+		{
+			name: "a bracket in a string does not close one in code", lines: []string{`f("(" + x`},
+			cursor: position{0, 1}, wantColor: unmatchedColor,
+		},
+		{
+			name: "a pair with a bracket of its kind in a string between", lines: []string{`f("(" + x)`},
+			cursor: position{0, 1}, want: position{0, 9}, wantMatch: true, wantColor: parenColor,
+		},
+		{
+			name: "a bracket in a comment is left alone", lines: []string{"// ("},
+			cursor: position{0, 3},
+		},
+		{
+			name: "a pair with a bracket in a comment between", lines: []string{"f( // (", ")"},
+			cursor: position{0, 1}, want: position{1, 0}, wantMatch: true, wantColor: parenColor,
+		},
+		{
+			name: "a brace in an escape is left alone", path: "lib.rs", lines: []string{`"\u{7B}"`},
+			cursor: position{0, 3},
+		},
+		{
+			name: "a bracket in a template literal is left alone", path: "app.js", lines: []string{"s = `(`"},
+			cursor: position{0, 5},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := matchBracket(toLines(tt.lines), tt.cursor)
-			if ok != tt.wantOK || ok && got != tt.want {
-				t.Errorf("matchBracket(%+v) = %+v, %v, want %+v, %v", tt.cursor, got, ok, tt.want, tt.wantOK)
+			path := tt.path
+			if path == "" {
+				path = "f.go"
+			}
+			got := matchBracket(languageFor(path), toLines(tt.lines), tt.cursor)
+			want := bracketPair{match: tt.want, matched: tt.wantMatch, color: tt.wantColor}
+			if got != want {
+				t.Errorf("matchBracket(%+v) = %+v, want %+v", tt.cursor, got, want)
 			}
 		})
 	}
@@ -161,6 +225,18 @@ func TestRenderColorsABracketWithoutAMatchRed(t *testing.T) {
 				t.Errorf("render = %q, want it to contain %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// A bracket in a string or a comment is not code, so it never gets a color.
+func TestRenderLeavesABracketInAStringPlain(t *testing.T) {
+	e := &editor{name: "f.go", lang: languageFor("f.go"), lines: toLines([]string{`s := "("`}), rows: 2, cols: 20, cx: 6}
+	var b bytes.Buffer
+	if err := e.render(&b); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if got := b.String(); !strings.Contains(got, `s := `+str(`"("`)) {
+		t.Errorf("render = %q, want the string in one color", got)
 	}
 }
 

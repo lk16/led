@@ -26,30 +26,30 @@ func colorOfBracket(r rune) string {
 	}
 }
 
-// matchBrackets picks the brackets to color: the one under the cursor, and the
-// one that matches it. Without a match the cursor's one turns red. A file type
-// led does not know gets no color at all.
-func (e *editor) matchBrackets() {
-	e.bracketColor, e.hasBracket = "", false
-	p := e.cursor()
-	if e.lang == nil || p.y >= len(e.lines) || p.x >= len(e.lines[p.y]) {
-		return
-	}
-	r := e.lines[p.y][p.x]
-	if !strings.ContainsRune(brackets, r) {
-		return
-	}
+// A bracketPair is what led colors around the cursor. See docs/highlighting.md.
+type bracketPair struct {
+	match   position // the bracket that pairs with the one under the cursor
+	matched bool     // the buffer holds that one
+	color   string   // color for both, "" when there is nothing to color
+}
 
-	e.bracket, e.hasBracket = matchBracket(e.lines, p)
-	e.bracketColor = unmatchedColor
-	if e.hasBracket {
-		e.bracketColor = colorOfBracket(r)
+// An openBracket is a bracket that is still waiting for its closing one.
+type openBracket struct {
+	pos position
+	r   rune
+}
+
+// matchBrackets picks the brackets to color. See docs/highlighting.md.
+func (e *editor) matchBrackets() {
+	e.pair = bracketPair{}
+	if e.lang != nil {
+		e.pair = matchBracket(e.lang, e.lines, e.cursor())
 	}
 }
 
 // paintBrackets colors the columns of row that hold one of the picked brackets.
 func (e *editor) paintBrackets(row int, colors []string) {
-	if e.bracketColor == "" {
+	if e.pair.color == "" {
 		return
 	}
 	set := func(p position) {
@@ -57,58 +57,61 @@ func (e *editor) paintBrackets(row int, colors []string) {
 			return
 		}
 		if col := column(e.lines[row], p.x); col < len(colors) {
-			colors[col] = e.bracketColor
+			colors[col] = e.pair.color
 		}
 	}
 	set(e.cursor())
-	if e.hasBracket {
-		set(e.bracket)
+	if e.pair.matched {
+		set(e.pair.match)
 	}
 }
 
-// matchBracket returns the position of the bracket that matches the one at p,
-// and whether the buffer holds one. Brackets in strings and comments count too.
-func matchBracket(lines [][]rune, p position) (position, bool) {
-	if p.y >= len(lines) || p.x >= len(lines[p.y]) {
-		return position{}, false
+// matchBracket reads the buffer as one text and returns what to color around the
+// bracket at p. It keeps the open brackets on a stack, so a pair has to be of one
+// kind, and it skips what is not code. See docs/highlighting.md.
+func matchBracket(lang *language, lines [][]rune, p position) bracketPair {
+	if p.y >= len(lines) || p.x >= len(lines[p.y]) || !strings.ContainsRune(brackets, lines[p.y][p.x]) {
+		return bracketPair{}
 	}
-	i := strings.IndexRune(brackets, lines[p.y][p.x])
-	if i < 0 {
-		return position{}, false
-	}
-	dir, other := 1, i+1
-	if i%2 == 1 {
-		dir, other = -1, i-1
-	}
-	open, want := rune(brackets[i]), rune(brackets[other])
 
-	depth := 0
-	for ok := true; ok; p, ok = step(lines, p, dir) {
-		switch lines[p.y][p.x] {
-		case open:
-			depth++
-		case want:
-			depth--
-			if depth == 0 {
-				return p, true
+	var stack []openBracket
+	var st lineState
+	onStack := false // p holds a bracket that counts and waits for its closing one
+	for y, line := range lines {
+		var spans []span
+		spans, st = lang.scan(line, st)
+		colors := colorsOf(line, spans)
+		for x, r := range line {
+			i := strings.IndexRune(brackets, r)
+			if i < 0 || colors[x] != "" {
+				continue
+			}
+
+			here := position{y: y, x: x}
+			if i%2 == 0 {
+				stack = append(stack, openBracket{here, r})
+				onStack = onStack || here == p
+				continue
+			}
+			if len(stack) == 0 || stack[len(stack)-1].r != rune(brackets[i-1]) {
+				if here == p {
+					return bracketPair{color: unmatchedColor}
+				}
+				continue
+			}
+
+			open := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			switch p {
+			case here:
+				return bracketPair{match: open.pos, matched: true, color: colorOfBracket(r)}
+			case open.pos:
+				return bracketPair{match: here, matched: true, color: colorOfBracket(r)}
 			}
 		}
 	}
-	return position{}, false
-}
-
-// step returns the position dir runes from p, and whether it is still in the
-// buffer. It steps over the ends of lines, empty ones included.
-func step(lines [][]rune, p position, dir int) (position, bool) {
-	for p.x += dir; p.x < 0 || p.x >= len(lines[p.y]); {
-		p.y += dir
-		if p.y < 0 || p.y >= len(lines) {
-			return position{}, false
-		}
-		p.x = 0
-		if dir < 0 {
-			p.x = len(lines[p.y]) - 1
-		}
+	if onStack {
+		return bracketPair{color: unmatchedColor}
 	}
-	return p, true
+	return bracketPair{}
 }

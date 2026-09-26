@@ -48,19 +48,26 @@ does not.
 
 ## Brackets
 
-`()`, `[]` and `{}`. When the cursor sits on one of them, led scans the buffer
-for its match, counting the brackets of the same kind on the way, and colors
-both in the color of that kind. Three kinds, three colors, so a pair right
-inside another is easy to tell apart. Without a match the bracket under the
-cursor turns red and nothing else is colored.
+`()`, `[]` and `{}`, each in its own color. Three kinds, three colors, so a pair
+right inside another is easy to tell apart. led colors only the pair the cursor
+is on, so the kind is the only thing left to color by. VS Code colors every pair
+in the file and goes by nesting depth instead.
 
-led only colors the pair the cursor is on, so the kind is the only thing left to
-color by. VS Code colors every pair in the file and goes by nesting depth
-instead.
+led reads the buffer as one text, from the first line down, and keeps the open
+brackets on a stack. Whatever pops the bracket under the cursor off that stack is
+its match, and both get the color of their kind.
 
-The scan has no idea about strings and comments, so a lone `(` in a comment
-pairs up with a real one. Doing better needs the whole buffer scanned as one
-text; the line scanner only knows what the line above it left open.
+A bracket turns red when it closes one of another kind, when the stack is empty
+under it, or when nothing ever pops it. A stray closing bracket pops nothing, so
+a pair around it still matches: a file with one bracket too many stays readable
+while it is being fixed.
+
+Only code counts. A bracket in a string, a comment or an escape sequence is
+skipped, and with the cursor on one of those nothing is colored. The scan asks
+the same line scanner that colors the text and takes every rune it leaves plain.
+A keyword or a number can never hold a bracket, so plain is the whole test.
+
+The scan walks the buffer on every key press.
 
 ## Over more than one line
 
