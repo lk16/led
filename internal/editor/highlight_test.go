@@ -78,6 +78,34 @@ func TestLanguageFor(t *testing.T) {
 	}
 }
 
+// A mark in lineState.nest is only the first rune of a delimiter, so quoteOf has
+// to give the whole delimiter back. See docs/highlighting.md.
+func TestQuoteOf(t *testing.T) {
+	tests := []struct {
+		name      string
+		path      string
+		mark      rune
+		wantQuote string
+		wantMulti bool
+	}{
+		{"a go backtick runs over lines", "main.go", '`', "`", true},
+		{"a go double quote ends with its line", "main.go", '"', `"`, false},
+		{"a javascript backtick runs over lines", "app.js", '`', "`", true},
+		{"a python double quote mark stands for three", "script.py", '"', `"""`, true},
+		{"a python single quote mark stands for three", "script.py", '\'', `'''`, true},
+		{"rust has no delimiter that runs over lines", "lib.rs", '"', `"`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			quote, multi := languageFor(tt.path).quoteOf(tt.mark)
+			if quote != tt.wantQuote || multi != tt.wantMulti {
+				t.Errorf("quoteOf(%q) for %s = %q, %v, want %q, %v",
+					tt.mark, tt.path, quote, multi, tt.wantQuote, tt.wantMulti)
+			}
+		})
+	}
+}
+
 func TestKeywordsPerLanguageDoNotLeak(t *testing.T) {
 	tests := []struct {
 		path string
@@ -495,6 +523,21 @@ func TestScanAcrossLines(t *testing.T) {
 			path:  "app.js",
 			lines: []string{"s = `a${`b", "c`}d`"},
 			want:  []string{"s = " + str("`a${`b"), str("c`}d`")},
+		},
+		{
+			name:  "an unclosed string in a substitution ends with its line",
+			path:  "app.js",
+			lines: []string{"s = `${\"a", "b}`"},
+			want:  []string{"s = " + str("`${\"a"), "b" + str("}`")},
+		},
+		{
+			name:  "a block comment in a substitution goes on over lines",
+			path:  "app.js",
+			lines: []string{"s = `${ /* a", "*/ }`"},
+			want: []string{
+				"s = " + stringColor + "`${" + reset + " " + comment("/* a"),
+				comment("*/") + " " + str("}`"),
+			},
 		},
 		{
 			name:  "a docstring covers the lines between its quotes",
