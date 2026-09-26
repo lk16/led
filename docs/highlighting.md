@@ -12,9 +12,9 @@ A file with any other extension gets no highlighting. led always opens a named f
 ## Per language
 
 A `language` in `internal/editor/highlight.go` holds the keyword list, the line
-comment marker, the block comment markers, the string delimiters and which of
-those delimiters open a string without escapes. A new language is a new entry in
-that table, nothing else.
+comment marker, the block comment markers, the string delimiters, which of those
+delimiters open a string without escapes, and whether the language has lifetimes.
+A new language is a new entry in that table, nothing else.
 
 ## Colors
 
@@ -44,6 +44,7 @@ does not.
 - A number is a word that starts with a digit, plus a dot between digits. So `0xff`, `1e9` and `3.14` are numbers, and `x2` is not.
 - A string runs to its closing quote. Inside `"` and `'` a backslash escapes the next character.
 - An escape sequence is a backslash and what belongs to it: `\x` and two hex digits, `\u` and four, `\U` and eight, `\u{...}` up to the brace, up to three octal digits, or one other character. Fewer digits than that stop it, so `\xz` is just `\x`.
+- A `'` in a language with lifetimes, so Rust, opens a string only when it closes right after one character or one escape: `'a'`, `'\n'`, `'\''`, `'\u{1F600}'`. Anything else is a lifetime, `&'a str` or `'static`, and stays plain. Go and Python have no lifetimes, so there a `'` always opens a string.
 - Which strings have escapes is per language, not per delimiter. A Go raw string, `` `a\n` ``, has none, a JavaScript template literal has them. `${...}` in a template literal is not handled.
 
 ## Brackets
@@ -75,7 +76,7 @@ A block comment and a string in backticks, so a Go raw string and a JavaScript
 template literal, may span lines. led scans from the first line of the file down
 to the first line on screen to know what is still open there.
 
-Nothing else spans lines. A `"` string that is not closed ends with its line.
-Python's triple quotes are not handled: a docstring is only colored on the lines
-where a quote opens and closes. A Rust lifetime, `&'a str`, looks like a string
-that opens and never closes.
+Nothing else spans lines. A `"` string that is not closed ends with its line, and
+so does a Rust lifetime, which opens no string at all. Python's triple quotes are
+not handled: a docstring is only colored on the lines where a quote opens and
+closes.

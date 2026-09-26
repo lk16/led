@@ -159,6 +159,56 @@ func TestScanStrings(t *testing.T) {
 	}
 }
 
+func TestScanRustLifetimes(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		line string
+		want string
+	}{
+		{"a lifetime in a reference", "lib.rs", `&'a str`, `&'a str`},
+		{"a lifetime between angle brackets", "lib.rs", `<'a>`, `<'a>`},
+		{"the static lifetime", "lib.rs", `&'static str`, `&'static str`},
+		{
+			"lifetimes in a function", "lib.rs", `fn f<'a>(x: &'a str) -> &'a str`,
+			color("fn") + ` f<'a>(x: &'a str) -> &'a str`,
+		},
+		{"a character literal", "lib.rs", `let c = 'a';`, color("let") + ` c = ` + str(`'a'`) + `;`},
+		{"a space in a character literal", "lib.rs", `' '`, str(`' '`)},
+		{
+			"an escape in a character literal", "lib.rs", `'\n'`,
+			stringColor + `'` + escapeColor + `\n` + stringColor + `'` + reset,
+		},
+		{
+			"an escaped backslash in a character literal", "lib.rs", `'\\'`,
+			stringColor + `'` + escapeColor + `\\` + stringColor + `'` + reset,
+		},
+		{
+			"an escaped quote in a character literal", "lib.rs", `'\''`,
+			stringColor + `'` + escapeColor + `\'` + stringColor + `'` + reset,
+		},
+		{
+			"a braced unicode escape in a character literal", "lib.rs", `'\u{1F600}'`,
+			stringColor + `'` + escapeColor + `\u{1F600}` + stringColor + `'` + reset,
+		},
+		{"a quote that never closes stays plain", "lib.rs", `let c = 'a`, color("let") + ` c = 'a`},
+		{"a quote at the end of the line stays plain", "lib.rs", `let c = '`, color("let") + ` c = '`},
+		{"more than one character is no literal", "lib.rs", `'ab'`, `'ab'`},
+		{"a keyword in a string after a lifetime", "lib.rs", `&'a "fn"`, `&'a ` + str(`"fn"`)},
+		{"go has no lifetimes", "main.go", `x := 'ab'`, `x := ` + str(`'ab'`)},
+		{"an unclosed go quote opens a string", "main.go", `x := 'a`, `x := ` + str(`'a`)},
+		{"python has no lifetimes", "script.py", `s = 'ab'`, `s = ` + str(`'ab'`)},
+		{"an unclosed python quote opens a string", "script.py", `s = 'a`, `s = ` + str(`'a`)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := colored(tt.path, tt.line); got != tt.want {
+				t.Errorf("colored(%q) for %s = %q, want %q", tt.line, tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestScanEscapes(t *testing.T) {
 	tests := []struct {
 		name string

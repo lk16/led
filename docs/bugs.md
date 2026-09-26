@@ -22,7 +22,6 @@ Take a line off this list in the commit that fixes it.
 ## Highlighting
 
 - Python triple quotes are colored only on the lines where a quote opens and where one closes. See [highlighting.md](highlighting.md).
-- A Rust lifetime, `&'a str`, reads as a string that opens and never closes.
 - `${...}` in a JavaScript template literal is colored as part of the string.
 
 ## Speed

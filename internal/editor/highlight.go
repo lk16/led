@@ -25,6 +25,7 @@ type language struct {
 	quotes      string // string delimiters that close on the same line
 	rawQuotes   string // string delimiters that may span lines
 	noEscapes   string // string delimiters after which a backslash is one more rune
+	lifetimes   bool   // a ' that opens no character literal is a lifetime
 }
 
 // escapes reports whether a backslash starts an escape sequence in a string that
@@ -70,6 +71,7 @@ var languagesByExt = map[string]*language{
 		blockStart:  "/*",
 		blockEnd:    "*/",
 		quotes:      `"'`,
+		lifetimes:   true,
 	},
 }
 
@@ -137,6 +139,8 @@ func (l *language) scan(line []rune, st lineState) ([]span, lineState) {
 			st.comment = !closed
 		case l.lineComment != "" && holds(line, i, l.lineComment):
 			emit(len(line), commentColor)
+		case l.lifetimes && line[i] == '\'' && !charLiteral(line, i):
+			i = wordEnd(line, i+1)
 		case strings.ContainsRune(l.quotes, line[i]) || strings.ContainsRune(l.rawQuotes, line[i]):
 			quote := line[i]
 			raw := strings.ContainsRune(l.rawQuotes, quote)
@@ -203,6 +207,16 @@ func scanString(line []rune, i int, quote rune, escapes bool, emit func(end int,
 	}
 	emit(len(line), stringColor)
 	return false
+}
+
+// charLiteral reports whether the quote at i opens a character literal: one
+// character or one escape, and then the same quote again. See docs/highlighting.md.
+func charLiteral(line []rune, i int) bool {
+	end := i + 2
+	if i+1 < len(line) && line[i+1] == '\\' {
+		end = escapeEnd(line, i+1)
+	}
+	return end < len(line) && line[end] == line[i]
 }
 
 // hexEscapes are the escapes that take a fixed number of hex digits.
