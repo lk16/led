@@ -3,6 +3,8 @@ package editor
 import (
 	"bytes"
 	"errors"
+	"io"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -283,7 +285,7 @@ func TestRenderLineScrolled(t *testing.T) {
 				lines: toLines(tt.lines), lang: languageFor(tt.file), colOff: tt.colOff,
 				anchor: tt.anchor, cx: tt.cx, cy: tt.cy, selecting: tt.selecting,
 			}
-			if got, _ := e.renderLine(0, tt.width, lineState{}); got != tt.want {
+			if got := e.renderLine(0, tt.width); got != tt.want {
 				t.Errorf("renderLine(0, %d) with colOff=%d = %q, want %q", tt.width, tt.colOff, got, tt.want)
 			}
 		})
@@ -594,7 +596,7 @@ func TestRenderLineSelection(t *testing.T) {
 				lines: toLines(tt.lines), lang: languageFor(tt.file),
 				anchor: tt.anchor, cx: tt.cx, cy: tt.cy, selecting: tt.selecting,
 			}
-			if got, _ := e.renderLine(tt.row, tt.width, lineState{}); got != tt.want {
+			if got := e.renderLine(tt.row, tt.width); got != tt.want {
 				t.Errorf("renderLine(%d, %d) = %q, want %q", tt.row, tt.width, got, tt.want)
 			}
 		})
@@ -659,5 +661,124 @@ func TestSelectedColumns(t *testing.T) {
 				t.Errorf("selectedColumns(%d, %d) = %d, %d, want %d, %d", tt.row, tt.width, from, to, tt.wantFrom, tt.wantTo)
 			}
 		})
+	}
+}
+
+// scannedStates returns the state at the start of every line, scanned from the
+// first one. That is what the cache must hold after any edit.
+func scannedStates(e *editor) []lineState {
+	states := make([]lineState, len(e.lines)+1)
+	var st lineState
+	for i, line := range e.lines {
+		_, st = e.lang.scan(line, st)
+		states[i+1] = st
+	}
+	return states
+}
+
+// An edit throws away only the cached states it makes invalid, so every edit has
+// to leave the cache as a scan from the first line would. See docs/highlighting.md.
+func TestLineStatesFollowEdits(t *testing.T) {
+	goLines := []string{"a := 1", "b := 2", "c := 3"}
+	tests := []struct {
+		name  string
+		file  string
+		lines []string
+		keys  []key
+	}{
+		{"typing a block comment opener", "f.go", goLines, []key{'/', '*'}},
+		{"taking the opener back", "f.go", goLines, []key{'/', '*', keyBack}},
+		{"closing the comment again", "f.go", []string{"/*", "b := 2"}, []key{keyEnd, '*', '/'}},
+		{"enter splits a line", "f.go", []string{"/*a", "b := 2"}, []key{keyRight, keyRight, keyEnter}},
+		{"backspace joins lines", "f.go", []string{"/*", "b := 2"}, []key{keyDown, keyBack}},
+		{"delete joins lines", "f.go", []string{"/*", "b := 2"}, []key{keyEnd, keyDelete}},
+		{"cutting over lines", "f.go", []string{"/*", "b := 2", "c := 3"}, []key{keyDown | modShift, keyCtrlX}},
+		{"pasting over lines", "f.go", []string{"/*", "b := 2"}, []key{keyDown | modShift, keyCtrlC, keyCtrlV}},
+		{"undoing a paste", "f.go", []string{"/*", "b := 2"}, []key{keyDown | modShift, keyCtrlC, keyCtrlV, keyCtrlZ}},
+		{"redoing a paste", "f.go", []string{"/*", "b := 2"}, []key{keyDown | modShift, keyCtrlC, keyCtrlV, keyCtrlZ, keyCtrlY}},
+		{"opening a template literal", "app.js", []string{"a = 1", "b = 2"}, []key{'`'}},
+		{"opening a triple quoted string", "f.py", []string{"a = 1", "b = 2"}, []key{'"', '"', '"'}},
+		{"undoing a triple quote", "f.py", []string{"a = 1", "b = 2"}, []key{'"', '"', '"', keyCtrlZ}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{name: tt.file, lang: languageFor(tt.file), lines: toLines(tt.lines), rows: 8, cols: 40}
+			for i, k := range tt.keys {
+				if err := e.render(io.Discard); err != nil {
+					t.Fatalf("render before key %d: %v", i, err)
+				}
+				if err := e.handleKey(k); err != nil {
+					t.Fatalf("key %d: %v", i, err)
+				}
+			}
+			if err := e.render(io.Discard); err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			if got, want := e.lineStates(), scannedStates(e); !reflect.DeepEqual(got, want) {
+				t.Errorf("lines %q\nstates = %+v\nwant     %+v", lineStrings(e.lines), got, want)
+			}
+		})
+	}
+}
+
+// Opening a block comment colors the lines below it, and taking the edit back
+// leaves them as they were.
+func TestRenderRecolorsLinesBelowAnEdit(t *testing.T) {
+	e := &editor{name: "f.go", lang: languageFor("f.go"), lines: toLines([]string{"a := 1", "b := 2"}), rows: 4, cols: 20}
+	draw := func() string {
+		var b bytes.Buffer
+		if err := e.render(&b); err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		return b.String()
+	}
+	press := func(keys ...key) {
+		for i, k := range keys {
+			if err := e.handleKey(k); err != nil {
+				t.Fatalf("key %d: %v", i, err)
+			}
+		}
+	}
+
+	if got := draw(); strings.Contains(got, commentColor) {
+		t.Fatalf("render of plain code = %q, want no comment color", got)
+	}
+	press('/', '*')
+	if want := commentColor + "b := 2"; !strings.Contains(draw(), want) {
+		t.Errorf("render after opening a comment does not hold %q", want)
+	}
+	press(keyCtrlZ)
+	if got := draw(); strings.Contains(got, commentColor) {
+		t.Errorf("render after an undo = %q, want no comment color", got)
+	}
+	press(keyCtrlY)
+	if want := commentColor + "b := 2"; !strings.Contains(draw(), want) {
+		t.Errorf("render after a redo does not hold %q", want)
+	}
+}
+
+// The lines above the screen decide what is still open at the top of it, so an
+// edit up there changes what the screen shows.
+func TestRenderFollowsAnEditAboveTheScreen(t *testing.T) {
+	lines := []string{"/*", "a := 1", "b := 2", "c := 3", "d := 4"}
+	e := &editor{name: "f.go", lang: languageFor("f.go"), lines: toLines(lines), rows: 3, cols: 20, cy: 4}
+	draw := func() string {
+		var b bytes.Buffer
+		if err := e.render(&b); err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		return b.String()
+	}
+
+	if want := commentColor + "d := 4"; !strings.Contains(draw(), want) {
+		t.Fatalf("render inside a comment does not hold %q", want)
+	}
+	for i, k := range []key{keyHome | modCtrl, keyEnd, '*', '/', keyEnd | modCtrl} {
+		if err := e.handleKey(k); err != nil {
+			t.Fatalf("key %d: %v", i, err)
+		}
+	}
+	if got := draw(); strings.Contains(got, commentColor) {
+		t.Errorf("render after closing the comment = %q, want no comment color", got)
 	}
 }

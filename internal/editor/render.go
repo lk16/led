@@ -30,12 +30,9 @@ func (e *editor) render(w io.Writer) error {
 
 	var b bytes.Buffer
 	b.WriteString("\x1b[?25l\x1b[H")
-	st := e.stateAt(e.rowOff)
 	for i := range e.textRows() {
 		if row := e.rowOff + i; row < len(e.lines) {
-			var text string
-			text, st = e.renderLine(row, width, st)
-			fmt.Fprintf(&b, "%s%*d %s%s", dim, gutter-1, row+1, reset, text)
+			fmt.Fprintf(&b, "%s%*d %s%s", dim, gutter-1, row+1, reset, e.renderLine(row, width))
 		} else {
 			b.WriteString(dim + "~" + reset)
 		}
@@ -97,21 +94,41 @@ func (e *editor) scroll() {
 	}
 }
 
-// stateAt returns the highlight state at the start of row, from the lines above it.
-func (e *editor) stateAt(row int) lineState {
-	var st lineState
-	for i := 0; i < row && i < len(e.lines); i++ {
-		_, st = e.lang.scan(e.lines[i], st)
+// lineStates returns the cached state at the start of every line, and the one the
+// last line leaves. It scans the buffer when nothing is cached yet.
+// See docs/highlighting.md.
+func (e *editor) lineStates() []lineState {
+	if len(e.states) != len(e.lines)+1 {
+		e.states = make([]lineState, len(e.lines)+1)
+		e.rescan(0, len(e.states))
 	}
-	return st
+	return e.states
+}
+
+// stateAt returns the highlight state at the start of row.
+func (e *editor) stateAt(row int) lineState {
+	return e.lineStates()[row]
+}
+
+// rescan recomputes the cached states below row, whose own state still holds. From
+// trusted on it stops as soon as a line keeps the state it had, because then so do
+// the lines below it. See docs/highlighting.md.
+func (e *editor) rescan(row, trusted int) {
+	st := e.states[row]
+	for y := row; y < len(e.lines); y++ {
+		_, st = e.lang.scan(e.lines[y], st)
+		if y+1 >= trusted && e.states[y+1] == st {
+			return
+		}
+		e.states[y+1] = st
+	}
 }
 
 // renderLine returns row as it is shown: width columns of it from the first one
-// the view shows. st is the highlight state at the start of the row, the returned
-// state is the one after it.
-func (e *editor) renderLine(row, width int, st lineState) (string, lineState) {
+// the view shows.
+func (e *editor) renderLine(row, width int) string {
 	line := expandTabs(e.lines[row])
-	spans, next := e.lang.scan(line, st)
+	spans, _ := e.lang.scan(line, e.stateAt(row))
 	colors := colorsOf(line, spans)
 	e.paintBrackets(row, colors)
 	from, to := e.selectedColumns(row, len(line))
@@ -119,7 +136,7 @@ func (e *editor) renderLine(row, width int, st lineState) (string, lineState) {
 	shown := window(line, e.colOff, width)
 	from = min(max(from-e.colOff, 0), len(shown))
 	to = min(max(to-e.colOff, 0), len(shown))
-	return paint(shown, window(colors, e.colOff, width), from, to), next
+	return paint(shown, window(colors, e.colOff, width), from, to)
 }
 
 // colorsOf returns the color of every column of line.

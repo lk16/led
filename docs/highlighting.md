@@ -57,14 +57,15 @@ right inside another is easy to tell apart. led colors only the pair the cursor
 is on, so the kind is the only thing left to color by. VS Code colors every pair
 in the file and goes by nesting depth instead.
 
-led reads the buffer as one text, from the first line down, and keeps the open
-brackets on a stack. Whatever pops the bracket under the cursor off that stack is
-its match, and both get the color of their kind.
+led walks out from the bracket under the cursor, down from an opening one and up
+from a closing one, and keeps the brackets it passes on a stack. The one that the
+stack leaves standing is the match, and both get the color of their kind. The walk
+reads no further than the match.
 
-A bracket turns red when it closes one of another kind, when the stack is empty
-under it, or when nothing ever pops it. A stray closing bracket pops nothing, so
-a pair around it still matches: a file with one bracket too many stays readable
-while it is being fixed.
+A bracket turns red when it meets one of another kind, when there is nothing for
+it to close, or when nothing ever closes it. A stray closing bracket closes
+nothing, so a pair around it still matches: a file with one bracket too many stays
+readable while it is being fixed.
 
 Only code counts. A bracket in a string, a comment or an escape sequence is
 skipped, and with the cursor on one of those nothing is colored. The scan asks
@@ -73,19 +74,26 @@ A keyword or a number can never hold a bracket, so plain is the whole test. The
 braces of a `${...}` are part of the string, so they do not count; the brackets in
 the code between them do.
 
-The scan walks the buffer on every key press. See [bugs.md](bugs.md).
+A bracket with no match is only known to have none at the first or the last line
+of the buffer, so that is the one case the walk still reads everything. See
+[bugs.md](bugs.md).
 
 ## Over more than one line
 
 A block comment and a string whose delimiter may span lines, so a Go raw string, a
 JavaScript template literal and a Python triple-quoted string, run on until they
-close. A `${...}` in a template literal does too. led scans from the first line of
-the file down to the first line on screen to know what is still open there.
+close. A `${...}` in a template literal does too. led keeps what every line leaves open,
+one state per line, so it knows what is open at the top of the screen without
+reading the lines above it again. It scans the whole file once, when the file
+opens, and an edit throws away only the states below it that it makes invalid: the
+scan stops as soon as a line keeps the state it had, because then so do the lines
+under it.
 
 What a line leaves open is a `lineState`: a flag for a block comment and a string
 with one mark per open string and `${...}`, the innermost last. A mark for a string
 is the first rune of its delimiter, so three quotes take one mark like a backtick
-does. The state is a value led only reads, so it is safe to keep and to copy.
+does. The state is a value led only reads, so it is safe to keep and to copy, which is
+what the one state per line above needs.
 
 Nothing else spans lines. A `"` or `'` string that is not closed ends with its
 line, and so does a Rust lifetime, which opens no string at all.

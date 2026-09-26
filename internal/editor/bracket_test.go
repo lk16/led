@@ -158,7 +158,8 @@ func TestMatchBracket(t *testing.T) {
 			if path == "" {
 				path = "f.go"
 			}
-			got := matchBracket(languageFor(path), toLines(tt.lines), tt.cursor)
+			e := &editor{lang: languageFor(path), lines: toLines(tt.lines)}
+			got := e.matchBracket(tt.cursor)
 			want := bracketPair{match: tt.want, matched: tt.wantMatch, color: tt.wantColor}
 			if got != want {
 				t.Errorf("matchBracket(%+v) = %+v, want %+v", tt.cursor, got, want)

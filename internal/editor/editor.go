@@ -26,6 +26,7 @@ type editor struct {
 	name         string    // path as shown in the status bar
 	lang         *language // how to color the file, nil for an unknown file type
 	lines        [][]rune
+	states       []lineState // what every line leaves open, and what the last one leaves
 	cx, cy       int         // cursor column and row in the buffer
 	goal         int         // screen column the cursor aims for while it moves between lines
 	betweenLines bool        // the key before this one moved between lines, so goal still counts
@@ -360,7 +361,8 @@ func (e *editor) removeText(start, end position) string {
 }
 
 // splice puts text where the text between start and end was and returns the
-// position just after it. Every edit to the buffer goes through here.
+// position just after it. Every edit to the buffer goes through here, so it is
+// also where the cached line states are thrown away. See docs/highlighting.md.
 func (e *editor) splice(start, end position, text string) position {
 	parts := strings.Split(text, "\n")
 	head := e.lines[start.y][:start.x:start.x]
@@ -373,7 +375,14 @@ func (e *editor) splice(start, end position, text string) position {
 	}
 	mid[len(mid)-1] = append(mid[len(mid)-1], tail...)
 
-	e.lines = slices.Concat(e.lines[:start.y], mid, e.lines[end.y+1:])
+	states := e.lineStates()
+	if len(mid) == 1 && start.y == end.y {
+		e.lines[start.y] = mid[0]
+	} else {
+		e.lines = slices.Concat(e.lines[:start.y], mid, e.lines[end.y+1:])
+		e.states = slices.Concat(states[:start.y+1], make([]lineState, len(mid)-1), states[end.y+1:])
+	}
+	e.rescan(start.y, start.y+len(mid))
 	e.dirty = true
 	return textEnd(start, text)
 }

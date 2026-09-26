@@ -21,5 +21,5 @@ Take a line off this list in the commit that fixes it.
 
 ## Speed
 
-- Every key press walks the lines above the screen to know which strings and comments are still open at the top of it, and with the cursor on a bracket it walks the buffer from the first line again to find the match. Nothing is kept between key presses.
-- One key press at the end of a file of Go, measured: 1.4 ms at 1000 lines, 13 ms at 10 000, 131 ms at 100 000. With the cursor on a bracket: 3.4 ms, 34 ms, 325 ms.
+- A bracket with no match is only known to have none at the first or the last line of the buffer, so the cursor on one reads every line. Opening a file reads it all once as well, to know what every line leaves open.
+- One key press at the end of a file of Go, measured: 0.06 ms at 1000 lines, and the same at 10 000 and at 100 000. With the cursor on a bracket: 0.08 ms.
