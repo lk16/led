@@ -19,7 +19,6 @@ Take a line off this list in the commit that fixes it.
 ## Keys
 
 - Ctrl + c and ctrl + z do nothing. Raw mode turns the signal keys off and led installs no handler, so ctrl + w is the only way out.
-- Application cursor keys, `\x1bOA` for up, are not read. led takes the `\x1b` for the escape key and types the `O` and the `A`.
 - Ctrl with home, end, page up or down does the same as without it. The start and the end of the file have no key.
 - An escape sequence that arrives in pieces, over a slow link, is read as the escape key and then typed. See [terminal.md](terminal.md).
 - There is no undo.

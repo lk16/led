@@ -58,7 +58,8 @@ func (k key) isMove() bool {
 	return false
 }
 
-// readKey returns one key press. An escape sequence becomes a single key.
+// readKey returns one key press. An escape sequence, in either its "\x1b[" or
+// its "\x1bO" form, becomes a single key.
 func readKey(in *bufio.Reader) (key, error) {
 	r, _, err := in.ReadRune()
 	if err != nil {
@@ -77,20 +78,26 @@ func readKey(in *bufio.Reader) (key, error) {
 	if err != nil {
 		return 0, err
 	}
-	if b != '[' {
-		return keyEscape, in.UnreadByte()
-	}
-
-	var params []byte
-	for {
+	switch b {
+	case '[':
+		var params []byte
+		for {
+			if b, err = in.ReadByte(); err != nil {
+				return 0, err
+			}
+			if b >= '@' && b <= '~' {
+				return escapeKey(params, b), nil
+			}
+			params = append(params, b)
+		}
+	case 'O':
+		// An SS3 sequence has no parameters. See docs/terminal.md.
 		if b, err = in.ReadByte(); err != nil {
 			return 0, err
 		}
-		if b >= '@' && b <= '~' {
-			return escapeKey(params, b), nil
-		}
-		params = append(params, b)
+		return escapeKey(nil, b), nil
 	}
+	return keyEscape, in.UnreadByte()
 }
 
 // tildeKeys are the keys that arrive as a number and a "~". See docs/terminal.md.

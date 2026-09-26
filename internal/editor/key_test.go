@@ -47,6 +47,12 @@ func TestReadKey(t *testing.T) {
 		{name: "alt right is an unmodified right", in: "\x1b[1;3C", want: keyRight},
 		{name: "modifier too large to read", in: "\x1b[1;99999999999999999999C", want: keyRight},
 		{name: "modifier below one", in: "\x1b[1;0C", want: keyRight},
+		{name: "up in application mode", in: "\x1bOA", want: keyUp},
+		{name: "down in application mode", in: "\x1bOB", want: keyDown},
+		{name: "right in application mode", in: "\x1bOC", want: keyRight},
+		{name: "left in application mode", in: "\x1bOD", want: keyLeft},
+		{name: "home in application mode", in: "\x1bOH", want: keyHome},
+		{name: "end in application mode", in: "\x1bOF", want: keyEnd},
 		{name: "escape", in: "\x1b", want: keyEscape},
 		{name: "escape then a key that is no sequence", in: "\x1bX", want: keyEscape},
 		{name: "unknown escape sequence", in: "\x1b[Z", want: keyUnknown},
@@ -54,6 +60,8 @@ func TestReadKey(t *testing.T) {
 		{name: "parameters at end of input", in: "\x1b[1;5", wantErr: true},
 		{name: "empty input", in: "", wantErr: true},
 		{name: "bracket at end of input", in: "\x1b[", wantErr: true},
+		{name: "unknown application sequence", in: "\x1bOZ", want: keyUnknown},
+		{name: "an O at end of input", in: "\x1bO", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -75,8 +83,8 @@ func TestReadKey(t *testing.T) {
 }
 
 func TestReadKeyReadsOneKeyAtATime(t *testing.T) {
-	in := bufio.NewReader(strings.NewReader("a\x1b[Bb"))
-	want := []key{'a', keyDown, 'b'}
+	in := bufio.NewReader(strings.NewReader("a\x1b[Bb\x1bOAc"))
+	want := []key{'a', keyDown, 'b', keyUp, 'c'}
 	for i, w := range want {
 		got, err := readKey(in)
 		if err != nil {

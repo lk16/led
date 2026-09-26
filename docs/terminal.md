@@ -22,6 +22,10 @@ parameter, `\x1b[1;5C` for ctrl + right. The parameter is 1 plus a bit per
 modifier: 1 for shift, 2 for alt, 4 for ctrl. led reads the bits it uses and
 ignores the rest.
 
+An arrow, home or end key comes in two forms: `\x1b[A` for up, and `\x1bOA` in
+application cursor key mode. led reads both. The `\x1bO` form carries no
+parameters, so it carries no modifiers either.
+
 The escape key sends the same `\x1b` an escape sequence starts with. A terminal
 writes a whole sequence in one go, so led looks at what its reader already holds:
 nothing behind the `\x1b` means the escape key. Over a slow link a sequence may
