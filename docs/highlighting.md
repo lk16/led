@@ -12,8 +12,9 @@ A file with any other extension gets no highlighting. led always opens a named f
 ## Per language
 
 A `language` in `internal/editor/highlight.go` holds the keyword list, the line
-comment marker, the block comment markers and the string delimiters. A new
-language is a new entry in that table, nothing else.
+comment marker, the block comment markers, the string delimiters and which of
+those delimiters open a string without escapes. A new language is a new entry in
+that table, nothing else.
 
 ## Colors
 
@@ -42,7 +43,8 @@ does not.
 - A keyword is a whole word: letters, digits and `_` around it make it plain text again. Keywords in a string or a comment are plain.
 - A number is a word that starts with a digit, plus a dot between digits. So `0xff`, `1e9` and `3.14` are numbers, and `x2` is not.
 - A string runs to its closing quote. Inside `"` and `'` a backslash escapes the next character.
-- An escape sequence is a backslash and what belongs to it: `\x` and two hex digits, `\u` and four, `\U` and eight, `\u{...}` up to the brace, up to three octal digits, or one other character. Fewer digits than that stop it, so `\xz` is just `\x`. A string in backticks has no escapes.
+- An escape sequence is a backslash and what belongs to it: `\x` and two hex digits, `\u` and four, `\U` and eight, `\u{...}` up to the brace, up to three octal digits, or one other character. Fewer digits than that stop it, so `\xz` is just `\x`.
+- Which strings have escapes is per language, not per delimiter. A Go raw string, `` `a\n` ``, has none, a JavaScript template literal has them. `${...}` in a template literal is not handled.
 
 ## Brackets
 

@@ -231,12 +231,27 @@ func TestScanEscapes(t *testing.T) {
 	}
 }
 
-// A raw string has no escapes, on its later lines either.
+// A go raw string has no escapes, on its later lines either.
 func TestScanRawStringOverLinesHasNoEscapes(t *testing.T) {
 	lines := []string{"s = `a", `b\nc` + "`"}
 	want := []string{
 		"s = " + str("`a"),
-		stringColor + `b\nc` + "`" + reset,
+		str(`b\nc` + "`"),
+	}
+	got := coloredLines("main.go", lines)
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("line %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// A template literal does have escapes, on its later lines too.
+func TestScanTemplateLiteralOverLinesHasEscapes(t *testing.T) {
+	lines := []string{"s = `a", `b\nc` + "`"}
+	want := []string{
+		"s = " + str("`a"),
+		stringColor + "b" + escapeColor + `\n` + stringColor + "c`" + reset,
 	}
 	got := coloredLines("app.js", lines)
 	for i := range want {

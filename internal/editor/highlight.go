@@ -24,6 +24,13 @@ type language struct {
 	blockEnd    string
 	quotes      string // string delimiters that close on the same line
 	rawQuotes   string // string delimiters that may span lines
+	noEscapes   string // string delimiters after which a backslash is one more rune
+}
+
+// escapes reports whether a backslash starts an escape sequence in a string that
+// quote opened. See docs/highlighting.md.
+func (l *language) escapes(quote rune) bool {
+	return !strings.ContainsRune(l.noEscapes, quote)
 }
 
 // languagesByExt holds the language per file extension.
@@ -36,6 +43,7 @@ var languagesByExt = map[string]*language{
 		blockEnd:    "*/",
 		quotes:      `"'`,
 		rawQuotes:   "`",
+		noEscapes:   "`",
 	},
 	".js": {
 		keywords: keywordSet(`async await break case catch class const continue debugger default delete do else
@@ -116,7 +124,7 @@ func (l *language) scan(line []rune, st lineState) ([]span, lineState) {
 		st.comment = !closed
 	}
 	if st.quote != 0 {
-		if scanString(line, 0, st.quote, false, emit) {
+		if scanString(line, 0, st.quote, l.escapes(st.quote), emit) {
 			st.quote = 0
 		}
 	}
@@ -132,7 +140,7 @@ func (l *language) scan(line []rune, st lineState) ([]span, lineState) {
 		case strings.ContainsRune(l.quotes, line[i]) || strings.ContainsRune(l.rawQuotes, line[i]):
 			quote := line[i]
 			raw := strings.ContainsRune(l.rawQuotes, quote)
-			closed := scanString(line, i+1, quote, !raw, emit)
+			closed := scanString(line, i+1, quote, l.escapes(quote), emit)
 			if raw && !closed {
 				st.quote = quote
 			}
