@@ -122,6 +122,8 @@ func (e *editor) applyKey(k key) error {
 		e.quit = true
 	case keyCtrlS:
 		return e.save()
+	case keyTab:
+		e.insert('\t')
 	case keyEnter:
 		e.splitLine()
 	case keyBack:

@@ -6,6 +6,7 @@
 - Asks what to do with unsaved changes before closing.
 - Colors keywords, strings, comments and numbers for Go, JavaScript, Python and Rust. See [highlighting.md](highlighting.md).
 - Colors the bracket under the cursor and the one it matches.
+- The tab key inserts a tab, never spaces. There is no setting for that.
 - Hotkeys are ctrl + a key.
 - Ctrl + left or right moves the cursor a word back or forward.
 - Shift + arrows select text. With ctrl they select a word at a time.

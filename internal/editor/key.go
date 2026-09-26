@@ -11,6 +11,7 @@ import (
 type key rune
 
 const (
+	keyTab   key = '\t'
 	keyCtrlS key = 0x13
 	keyCtrlW key = 0x17
 	keyEnter key = '\r'

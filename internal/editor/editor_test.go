@@ -274,6 +274,11 @@ func TestHandleKey(t *testing.T) {
 			want: []string{"a b", "cd"},
 		},
 		{
+			name: "tab inserts a tab",
+			k:    keyTab,
+			want: []string{"a\tb", "cd"},
+		},
+		{
 			name: "unknown key is ignored",
 			k:    keyUnknown,
 			want: []string{"ab", "cd"},

@@ -15,6 +15,7 @@ func TestReadKey(t *testing.T) {
 	}{
 		{name: "rune", in: "a", want: 'a'},
 		{name: "multi byte rune", in: "é", want: 'é'},
+		{name: "tab", in: "\t", want: keyTab},
 		{name: "enter", in: "\r", want: keyEnter},
 		{name: "backspace", in: "\x7f", want: keyBack},
 		{name: "ctrl s", in: "\x13", want: keyCtrlS},
