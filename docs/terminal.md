@@ -55,6 +55,9 @@ terminals that erase with the current background would color the whole row.
 led draws a tab as spaces up to the next tab stop, every 8 columns, counted from
 the start of the line.
 
+led expands a line to columns first and shows the part of it the view holds, so
+a tab at the left edge shows only the spaces that are on screen.
+
 It does not print the tab itself. A terminal moves the cursor over a tab without
 erasing what is there, so old text stayed on screen in the indentation of the
 next file line. A tab also takes more columns than the one rune led counted, so a

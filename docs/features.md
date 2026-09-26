@@ -2,7 +2,8 @@
 
 - Opens one file, given as the only argument.
 - A save keeps the final newline as the file had it. A file that ends without one is saved without one, and an empty file stays empty.
-- Shows line numbers.
+- Shows line numbers. They stay at the left while the view scrolls.
+- Scrolls sideways past the width of the screen, so the cursor stays visible.
 - Shows a status bar with the path of the open file, with the home directory as `~`.
 - Asks what to do with unsaved changes before closing. Escape takes the question away and goes back to the file.
 - Colors keywords, strings, comments, numbers and escape sequences for Go, JavaScript, Python and Rust. See [highlighting.md](highlighting.md).

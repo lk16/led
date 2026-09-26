@@ -60,13 +60,13 @@ func TestRender(t *testing.T) {
 			want:  "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39mabc\x1b[K\r\n" + statusBar("f.txt", 5) + "\x1b[1;3H\x1b[?25h",
 		},
 		{
-			name:  "cursor stays on screen",
+			name:  "a long line scrolls sideways to keep the cursor on screen",
 			lines: []string{"abcdef"},
 			file:  "f.txt",
 			rows:  2,
 			cols:  5,
 			cx:    6,
-			want:  "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39mabc\x1b[K\r\n" + statusBar("f.txt", 5) + "\x1b[1;5H\x1b[?25h",
+			want:  "\x1b[?25l\x1b[H" + "\x1b[90m1 \x1b[39mef\x1b[K\r\n" + statusBar("f.txt", 5) + "\x1b[1;5H\x1b[?25h",
 		},
 		{
 			name:  "long path is clipped to the screen width",
@@ -199,6 +199,124 @@ func TestScroll(t *testing.T) {
 			e.scroll()
 			if e.rowOff != tt.wantRowOff {
 				t.Errorf("rowOff = %d, want %d", e.rowOff, tt.wantRowOff)
+			}
+		})
+	}
+}
+
+func TestScrollColumns(t *testing.T) {
+	tests := []struct {
+		name       string
+		line       string
+		cols       int
+		cx         int
+		colOff     int
+		wantColOff int
+	}{
+		{"cursor on screen", "abcdefgh", 10, 3, 0, 0},
+		{"cursor on the last visible column", "abcdefgh", 10, 7, 0, 0},
+		{"cursor one past the right edge", "abcdefghij", 10, 8, 0, 1},
+		{"cursor at the end of a long line", "abcdefghij", 10, 10, 0, 3},
+		{"cursor left of the view", "abcdefghij", 10, 1, 5, 1},
+		{"scrolls back to the line start", "abcdefghij", 10, 0, 5, 0},
+		{"a tab counts the columns it draws", "\tabc", 10, 2, 0, 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{lines: toLines([]string{tt.line}), rows: 2, cols: tt.cols, cx: tt.cx, colOff: tt.colOff}
+			e.scroll()
+			if e.colOff != tt.wantColOff {
+				t.Errorf("colOff = %d, want %d", e.colOff, tt.wantColOff)
+			}
+		})
+	}
+}
+
+func TestRenderLineScrolled(t *testing.T) {
+	tests := []struct {
+		name      string
+		lines     []string
+		file      string
+		anchor    position
+		cx, cy    int
+		selecting bool
+		colOff    int
+		width     int
+		want      string
+	}{
+		{
+			name: "the view at the line start", lines: []string{"abcdefghij"},
+			colOff: 0, width: 4, want: "abcd",
+		},
+		{
+			name: "the view scrolled sideways", lines: []string{"abcdefghij"},
+			colOff: 3, width: 4, want: "defg",
+		},
+		{
+			name: "the view scrolled past the end of the line", lines: []string{"ab"},
+			colOff: 5, width: 4, want: "",
+		},
+		{
+			name: "a view that starts inside a tab shows the spaces on screen", lines: []string{"\tab"},
+			colOff: 3, width: 10, want: "     ab",
+		},
+		{
+			name: "a selection over the whole view", lines: []string{"abcdefghij"}, selecting: true,
+			anchor: position{0, 2}, cx: 8, colOff: 3, width: 4, want: selBg + "defg" + noBg,
+		},
+		{
+			name: "a selection that ends inside the view", lines: []string{"abcdefghij"}, selecting: true,
+			anchor: position{0, 2}, cx: 5, colOff: 3, width: 4, want: selBg + "de" + noBg + "fg",
+		},
+		{
+			name: "a selection left of the view", lines: []string{"abcdefghij"}, selecting: true,
+			anchor: position{0, 0}, cx: 2, colOff: 3, width: 4, want: "defg",
+		},
+		{
+			name: "keywords keep their color", lines: []string{"func x"}, file: "f.go",
+			colOff: 2, width: 4, want: keywordColor + "nc" + reset + " x",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{
+				lines: toLines(tt.lines), lang: languageFor(tt.file), colOff: tt.colOff,
+				anchor: tt.anchor, cx: tt.cx, cy: tt.cy, selecting: tt.selecting,
+			}
+			if got, _ := e.renderLine(0, tt.width, lineState{}); got != tt.want {
+				t.Errorf("renderLine(0, %d) with colOff=%d = %q, want %q", tt.width, tt.colOff, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenderScrolledSideways(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+		cols  int
+		cx    int
+		want  string
+	}{
+		{
+			name: "a long line and the cursor at its end", lines: []string{"abcdefghij"}, cols: 8, cx: 10,
+			want: "\x1b[90m1 \x1b[39mfghij\x1b[K\r\n" + statusBar("f.txt", 8) + "\x1b[1;8H",
+		},
+		{
+			name: "a tab straddling the left edge", lines: []string{"\tabcdefgh"}, cols: 8, cx: 1,
+			want: "\x1b[90m1 \x1b[39m     a\x1b[K\r\n" + statusBar("f.txt", 8) + "\x1b[1;8H",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{name: "f.txt", lines: toLines(tt.lines), rows: 2, cols: tt.cols, cx: tt.cx}
+			var b bytes.Buffer
+			if err := e.render(&b); err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			want := "\x1b[?25l\x1b[H" + tt.want + "\x1b[?25h"
+			if got := b.String(); got != want {
+				t.Errorf("render =\n%q\nwant\n%q", got, want)
 			}
 		})
 	}

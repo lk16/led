@@ -32,6 +32,7 @@ type editor struct {
 	pair         bracketPair // the brackets led colors around the cursor
 	selecting    bool        // shift + arrows are extending a selection
 	rowOff       int         // first buffer row shown on screen
+	colOff       int         // first screen column of a line shown on screen
 	rows         int
 	cols         int
 	dirty        bool // buffer has edits that are not saved
