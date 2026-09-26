@@ -1,6 +1,9 @@
 package editor
 
 import (
+	"fmt"
+	"io"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1662,5 +1665,64 @@ func TestUndoEverythingGetsTheFileBack(t *testing.T) {
 	}
 	if len(e.undoStack) != 0 {
 		t.Errorf("undo stack = %d changes, want 0", len(e.undoStack))
+	}
+}
+
+// keySet is every key a press can be, for the run of keys below.
+var keySet = []key{
+	'a', 'x', '1', '(', ')', '[', ']', '{', '}', '"', '\'', '`', '\\', '$', '/', '*', '#',
+	keyTab, keyEnter, keyBack, keyDelete, keyEscape,
+	keyUp, keyDown, keyLeft, keyRight, keyHome, keyEnd, keyPageUp, keyPageDown,
+	keyUp | modShift, keyDown | modShift, keyLeft | modShift, keyRight | modShift,
+	keyLeft | modCtrl, keyRight | modCtrl, keyHome | modCtrl, keyEnd | modCtrl,
+	keyLeft | modCtrl | modShift, keyRight | modCtrl | modShift,
+	keyPageUp | modCtrl, keyPageDown | modCtrl,
+	keyCtrlX, keyCtrlC, keyCtrlV, keyCtrlZ, keyCtrlY,
+}
+
+// A run of key presses may never leave the editor in a state it cannot draw: the
+// cursor stays in the buffer, the cached line states stay the ones a scan from the
+// first line gives, and taking every change back gets the file back. The keys come
+// from a fixed seed, so a failure comes back with the same keys.
+func TestARunOfKeysKeepsTheEditorConsistent(t *testing.T) {
+	start := []string{"func f() {", "\ts := \"a(b\"", "\t/* c */", "\treturn `x${y}z`", "}", ""}
+	for _, file := range []string{"main.go", "app.js", "script.py", "lib.rs", "notes.txt"} {
+		for seed := range 10 {
+			t.Run(fmt.Sprintf("%s from seed %d", file, seed), func(t *testing.T) {
+				e := &editor{name: file, lang: languageFor(file), lines: toLines(start), rows: 5, cols: 20}
+				r := rand.New(rand.NewSource(int64(seed)))
+				presses := 200
+				for i := range presses {
+					k := keySet[r.Intn(len(keySet))]
+					if err := e.handleKey(k); err != nil {
+						t.Fatalf("key %d (%d): %v", i, k, err)
+					}
+					if err := e.render(io.Discard); err != nil {
+						t.Fatalf("render after key %d (%d): %v", i, k, err)
+					}
+					if e.cy < 0 || e.cy >= len(e.lines) {
+						t.Fatalf("after key %d (%d): cy = %d, buffer has %d lines", i, k, e.cy, len(e.lines))
+					}
+					if e.cx < 0 || e.cx > len(e.lines[e.cy]) {
+						t.Fatalf("after key %d (%d): cx = %d, line %q", i, k, e.cx, string(e.lines[e.cy]))
+					}
+					if e.lang == nil {
+						continue
+					}
+					if got, want := e.lineStates(), scannedStates(e); !reflect.DeepEqual(got, want) {
+						t.Fatalf("after key %d (%d) on %q:\nstates = %+v\nwant     %+v",
+							i, k, lineStrings(e.lines), got, want)
+					}
+				}
+				for range presses {
+					if err := e.handleKey(keyCtrlZ); err != nil {
+						t.Fatalf("undo: %v", err)
+					}
+				}
+				if got := lineStrings(e.lines); !reflect.DeepEqual(got, start) {
+					t.Errorf("after undoing everything: lines = %q, want %q", got, start)
+				}
+			})
+		}
 	}
 }
