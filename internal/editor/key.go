@@ -39,6 +39,16 @@ const (
 	modCtrl
 )
 
+// isVertical reports whether k moves the cursor between lines, with or without
+// modifiers. Those keys keep the column the cursor wants. See docs/features.md.
+func (k key) isVertical() bool {
+	switch k &^ (modShift | modCtrl) {
+	case keyUp, keyDown, keyPageUp, keyPageDown:
+		return true
+	}
+	return false
+}
+
 // isMove reports whether k moves the cursor, with or without modifiers.
 func (k key) isMove() bool {
 	switch k &^ (modShift | modCtrl) {

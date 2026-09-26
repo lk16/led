@@ -234,10 +234,41 @@ func TestMove(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			e := &editor{lines: toLines(tt.lines), cx: tt.cx, cy: tt.cy}
+			// Outside a run of moves between lines, goal is the column the cursor is in.
+			e := &editor{lines: toLines(tt.lines), cx: tt.cx, cy: tt.cy, goal: tt.cx}
 			e.move(tt.k)
 			if e.cx != tt.wantCx || e.cy != tt.wantCy {
 				t.Errorf("cursor = (%d,%d), want (%d,%d)", e.cx, e.cy, tt.wantCx, tt.wantCy)
+			}
+		})
+	}
+}
+
+// A short line on the way does not pull the cursor left for good.
+func TestMoveBetweenLinesKeepsTheColumn(t *testing.T) {
+	lines := []string{"abcde", "x", "abcde", "", "abcde"}
+	tests := []struct {
+		name string
+		keys []key
+		want position
+	}{
+		{"down over a short line", []key{keyDown, keyDown}, position{2, 4}},
+		{"down over an empty line", []key{keyDown, keyDown, keyDown, keyDown}, position{4, 4}},
+		{"up over a short line", []key{keyDown, keyDown, keyUp, keyUp}, position{0, 4}},
+		{"a step left picks a new column", []key{keyDown, keyLeft, keyDown}, position{2, 0}},
+		{"typing picks a new column", []key{keyDown, 'y', keyDown}, position{2, 2}},
+		{"home picks a new column", []key{keyHome, keyDown, keyDown}, position{2, 0}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{lines: toLines(lines), cx: 4, rows: 8}
+			for i, k := range tt.keys {
+				if err := e.handleKey(k); err != nil {
+					t.Fatalf("key %d: %v", i, err)
+				}
+			}
+			if e.cursor() != tt.want {
+				t.Errorf("cursor = %+v, want %+v", e.cursor(), tt.want)
 			}
 		})
 	}

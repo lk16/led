@@ -21,20 +21,22 @@ func (p position) before(q position) bool {
 }
 
 type editor struct {
-	path      string
-	name      string    // path as shown in the status bar
-	lang      *language // how to color the file, nil for an unknown file type
-	lines     [][]rune
-	cx, cy    int         // cursor column and row in the buffer
-	anchor    position    // other end of the selection, only set while selecting
-	pair      bracketPair // the brackets led colors around the cursor
-	selecting bool        // shift + arrows are extending a selection
-	rowOff    int         // first buffer row shown on screen
-	rows      int
-	cols      int
-	dirty     bool // buffer has edits that are not saved
-	prompt    bool // asking what to do with those edits
-	quit      bool
+	path         string
+	name         string    // path as shown in the status bar
+	lang         *language // how to color the file, nil for an unknown file type
+	lines        [][]rune
+	cx, cy       int         // cursor column and row in the buffer
+	goal         int         // column the cursor aims for while it moves between lines
+	betweenLines bool        // the key before this one moved between lines, so goal still counts
+	anchor       position    // other end of the selection, only set while selecting
+	pair         bracketPair // the brackets led colors around the cursor
+	selecting    bool        // shift + arrows are extending a selection
+	rowOff       int         // first buffer row shown on screen
+	rows         int
+	cols         int
+	dirty        bool // buffer has edits that are not saved
+	prompt       bool // asking what to do with those edits
+	quit         bool
 }
 
 func newEditor(path string) (*editor, error) {
@@ -80,7 +82,8 @@ func splitLines(data []byte) [][]rune {
 }
 
 // handleKey applies one key press. A shift + arrow selects from where the cursor
-// was, every other key drops the selection.
+// was, every other key drops the selection. A run of moves between lines takes
+// the column the cursor aims for from where that run starts.
 func (e *editor) handleKey(k key) error {
 	if e.prompt {
 		return e.answerPrompt(k)
@@ -88,6 +91,11 @@ func (e *editor) handleKey(k key) error {
 	if k&modShift != 0 && !e.selecting {
 		e.anchor, e.selecting = e.cursor(), true
 	}
+	if !e.betweenLines {
+		e.goal = e.cx
+	}
+	e.betweenLines = k.isVertical()
+
 	err := e.applyKey(k)
 	if k&modShift == 0 {
 		e.selecting = false
@@ -170,7 +178,9 @@ func (e *editor) save() error {
 	return nil
 }
 
-// move moves the cursor. Shift does not change where it lands, only what gets selected.
+// move moves the cursor. Shift does not change where it lands, only what gets
+// selected. A move between lines lands on the column the cursor wants, clipped to
+// the line it lands in. See docs/features.md.
 func (e *editor) move(k key) {
 	switch k &^ modShift {
 	case keyUp, keyUp | modCtrl:
@@ -221,6 +231,9 @@ func (e *editor) move(k key) {
 		e.cy = max(e.cy-e.textRows(), 0)
 	case keyPageDown, keyPageDown | modCtrl:
 		e.cy = min(e.cy+e.textRows(), len(e.lines)-1)
+	}
+	if k.isVertical() {
+		e.cx = e.goal
 	}
 	if e.cx > len(e.lines[e.cy]) {
 		e.cx = len(e.lines[e.cy])
