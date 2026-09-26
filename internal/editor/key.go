@@ -11,10 +11,13 @@ import (
 type key rune
 
 const (
+	keyCtrlC  key = 0x03
 	keyTab    key = '\t'
 	keyEnter  key = '\r'
 	keyCtrlS  key = 0x13
+	keyCtrlV  key = 0x16
 	keyCtrlW  key = 0x17
+	keyCtrlX  key = 0x18
 	keyEscape key = 0x1b
 	keyBack   key = 0x7f
 )

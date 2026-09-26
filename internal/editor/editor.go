@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -31,6 +32,7 @@ type editor struct {
 	anchor       position    // other end of the selection, only set while selecting
 	pair         bracketPair // the brackets led colors around the cursor
 	selecting    bool        // shift + arrows are extending a selection
+	clipboard    string      // text cut or copied, led's own, not the system one
 	rowOff       int         // first buffer row shown on screen
 	colOff       int         // first screen column of a line shown on screen
 	rows         int
@@ -135,6 +137,12 @@ func (e *editor) applyKey(k key) error {
 		e.quit = true
 	case keyCtrlS:
 		return e.save()
+	case keyCtrlX:
+		e.cut()
+	case keyCtrlC:
+		e.copy()
+	case keyCtrlV:
+		e.paste()
 	case keyTab:
 		e.insert('\t')
 	case keyEnter:
@@ -355,4 +363,93 @@ func (e *editor) backspace() {
 	e.lines = append(e.lines[:e.cy], e.lines[e.cy+1:]...)
 	e.cy--
 	e.dirty = true
+}
+
+// insertText inserts text at p and returns the position just after it. A newline
+// in text splits the line it lands in.
+func (e *editor) insertText(p position, text string) position {
+	parts := strings.Split(text, "\n")
+	line := e.lines[p.y]
+	head, tail := line[:p.x:p.x], line[p.x:]
+
+	mid := make([][]rune, len(parts))
+	mid[0] = append(append([]rune(nil), head...), []rune(parts[0])...)
+	for i, part := range parts[1:] {
+		mid[i+1] = []rune(part)
+	}
+	mid[len(mid)-1] = append(mid[len(mid)-1], tail...)
+
+	e.lines = slices.Concat(e.lines[:p.y], mid, e.lines[p.y+1:])
+	e.dirty = true
+	return textEnd(p, text)
+}
+
+// removeText removes the text between start and end, in buffer order, and
+// returns what it removed.
+func (e *editor) removeText(start, end position) string {
+	text := e.textBetween(start, end)
+	head := e.lines[start.y][:start.x:start.x]
+	tail := e.lines[end.y][end.x:]
+
+	e.lines = append(e.lines[:start.y], e.lines[end.y:]...)
+	e.lines[start.y] = append(append([]rune(nil), head...), tail...)
+	e.dirty = true
+	return text
+}
+
+// textBetween returns the text between start and end, in buffer order, with a
+// newline for every line break it covers.
+func (e *editor) textBetween(start, end position) string {
+	if start.y == end.y {
+		return string(e.lines[start.y][start.x:end.x])
+	}
+	var b strings.Builder
+	b.WriteString(string(e.lines[start.y][start.x:]))
+	for _, line := range e.lines[start.y+1 : end.y] {
+		b.WriteByte('\n')
+		b.WriteString(string(line))
+	}
+	b.WriteByte('\n')
+	b.WriteString(string(e.lines[end.y][:end.x]))
+	return b.String()
+}
+
+// textEnd returns the position just after text inserted at p.
+func textEnd(p position, text string) position {
+	last := text[strings.LastIndex(text, "\n")+1:]
+	end := position{y: p.y + strings.Count(text, "\n"), x: utf8.RuneCountInString(last)}
+	if end.y == p.y {
+		end.x += p.x
+	}
+	return end
+}
+
+// copy puts the selection on the clipboard. See docs/features.md.
+func (e *editor) copy() {
+	start, end := e.selection()
+	if start == end {
+		return
+	}
+	e.clipboard = e.textBetween(start, end)
+}
+
+// cut puts the selection on the clipboard and removes it, leaving the cursor
+// where the selection started.
+func (e *editor) cut() {
+	start, end := e.selection()
+	if start == end {
+		return
+	}
+	e.clipboard = e.removeText(start, end)
+	e.cy, e.cx = start.y, start.x
+}
+
+// paste inserts the clipboard at the cursor, the way typing inserts a rune. See
+// docs/features.md.
+func (e *editor) paste() {
+	if e.clipboard == "" {
+		return
+	}
+	p := e.insertText(e.cursor(), e.clipboard)
+	e.cy, e.cx = p.y, p.x
 }

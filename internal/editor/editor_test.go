@@ -1065,3 +1065,342 @@ func TestPositionBefore(t *testing.T) {
 		})
 	}
 }
+
+// selectedEditor returns an editor with the text between anchor and cursor selected.
+func selectedEditor(lines []string, anchor, cursor position) *editor {
+	return &editor{
+		lines:     toLines(lines),
+		anchor:    anchor,
+		cy:        cursor.y,
+		cx:        cursor.x,
+		selecting: true,
+	}
+}
+
+func TestCopySelection(t *testing.T) {
+	tests := []struct {
+		name          string
+		lines         []string
+		anchor        position
+		cursor        position
+		wantClipboard string
+	}{
+		{
+			name: "inside one line", lines: []string{"abcdef"},
+			anchor: position{0, 1}, cursor: position{0, 4}, wantClipboard: "bcd",
+		},
+		{
+			name: "made backwards", lines: []string{"abcdef"},
+			anchor: position{0, 4}, cursor: position{0, 1}, wantClipboard: "bcd",
+		},
+		{
+			name: "over two lines", lines: []string{"abc", "def"},
+			anchor: position{0, 1}, cursor: position{1, 2}, wantClipboard: "bc\nde",
+		},
+		{
+			name: "over three lines", lines: []string{"abc", "def", "ghi"},
+			anchor: position{0, 2}, cursor: position{2, 1}, wantClipboard: "c\ndef\ng",
+		},
+		{
+			name: "a whole line and its break", lines: []string{"abc", "def"},
+			anchor: position{0, 0}, cursor: position{1, 0}, wantClipboard: "abc\n",
+		},
+		{
+			name: "over an empty line", lines: []string{"ab", "", "cd"},
+			anchor: position{0, 1}, cursor: position{2, 1}, wantClipboard: "b\n\nc",
+		},
+		{
+			name: "multi byte runes", lines: []string{"aébc"},
+			anchor: position{0, 1}, cursor: position{0, 3}, wantClipboard: "éb",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := selectedEditor(tt.lines, tt.anchor, tt.cursor)
+			if err := e.handleKey(keyCtrlC); err != nil {
+				t.Fatalf("handleKey: %v", err)
+			}
+			if e.clipboard != tt.wantClipboard {
+				t.Errorf("clipboard = %q, want %q", e.clipboard, tt.wantClipboard)
+			}
+			if got := lineStrings(e.lines); !reflect.DeepEqual(got, tt.lines) {
+				t.Errorf("lines = %q, want %q", got, tt.lines)
+			}
+			if e.cursor() != tt.cursor {
+				t.Errorf("cursor = %+v, want %+v", e.cursor(), tt.cursor)
+			}
+			if e.dirty {
+				t.Error("dirty = true after a copy, want false")
+			}
+		})
+	}
+}
+
+func TestCutSelection(t *testing.T) {
+	tests := []struct {
+		name          string
+		lines         []string
+		anchor        position
+		cursor        position
+		wantClipboard string
+		wantLines     []string
+		wantCursor    position
+	}{
+		{
+			name: "inside one line", lines: []string{"abcdef"},
+			anchor: position{0, 1}, cursor: position{0, 4},
+			wantClipboard: "bcd", wantLines: []string{"aef"}, wantCursor: position{0, 1},
+		},
+		{
+			name: "made backwards", lines: []string{"abcdef"},
+			anchor: position{0, 4}, cursor: position{0, 1},
+			wantClipboard: "bcd", wantLines: []string{"aef"}, wantCursor: position{0, 1},
+		},
+		{
+			name: "over two lines", lines: []string{"abc", "def"},
+			anchor: position{0, 1}, cursor: position{1, 2},
+			wantClipboard: "bc\nde", wantLines: []string{"af"}, wantCursor: position{0, 1},
+		},
+		{
+			name: "over three lines", lines: []string{"abc", "def", "ghi"},
+			anchor: position{0, 2}, cursor: position{2, 1},
+			wantClipboard: "c\ndef\ng", wantLines: []string{"abhi"}, wantCursor: position{0, 2},
+		},
+		{
+			name: "a whole line and its break", lines: []string{"abc", "def"},
+			anchor: position{0, 0}, cursor: position{1, 0},
+			wantClipboard: "abc\n", wantLines: []string{"def"}, wantCursor: position{0, 0},
+		},
+		{
+			name: "the last line of the buffer", lines: []string{"abc", "def"},
+			anchor: position{1, 0}, cursor: position{1, 3},
+			wantClipboard: "def", wantLines: []string{"abc", ""}, wantCursor: position{1, 0},
+		},
+		{
+			name: "multi byte runes", lines: []string{"aébc"},
+			anchor: position{0, 1}, cursor: position{0, 3},
+			wantClipboard: "éb", wantLines: []string{"ac"}, wantCursor: position{0, 1},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := selectedEditor(tt.lines, tt.anchor, tt.cursor)
+			if err := e.handleKey(keyCtrlX); err != nil {
+				t.Fatalf("handleKey: %v", err)
+			}
+			if e.clipboard != tt.wantClipboard {
+				t.Errorf("clipboard = %q, want %q", e.clipboard, tt.wantClipboard)
+			}
+			if got := lineStrings(e.lines); !reflect.DeepEqual(got, tt.wantLines) {
+				t.Errorf("lines = %q, want %q", got, tt.wantLines)
+			}
+			if e.cursor() != tt.wantCursor {
+				t.Errorf("cursor = %+v, want %+v", e.cursor(), tt.wantCursor)
+			}
+			if !e.dirty {
+				t.Error("dirty = false after a cut, want true")
+			}
+		})
+	}
+}
+
+// With nothing selected there is nothing to cut or copy. See docs/features.md.
+func TestCutAndCopyWithoutSelection(t *testing.T) {
+	tests := []struct {
+		name string
+		k    key
+	}{
+		{"cut", keyCtrlX},
+		{"copy", keyCtrlC},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{lines: toLines([]string{"ab", "cd"}), cx: 1, clipboard: "old"}
+			if err := e.handleKey(tt.k); err != nil {
+				t.Fatalf("handleKey: %v", err)
+			}
+			if got, want := lineStrings(e.lines), []string{"ab", "cd"}; !reflect.DeepEqual(got, want) {
+				t.Errorf("lines = %q, want %q", got, want)
+			}
+			if e.clipboard != "old" {
+				t.Errorf("clipboard = %q, want %q", e.clipboard, "old")
+			}
+			if e.dirty {
+				t.Error("dirty = true, want false")
+			}
+		})
+	}
+}
+
+// A selection that is back at its anchor covers nothing, so there is nothing to cut.
+func TestCutEmptySelection(t *testing.T) {
+	e := selectedEditor([]string{"abc"}, position{0, 1}, position{0, 1})
+	if err := e.handleKey(keyCtrlX); err != nil {
+		t.Fatalf("handleKey: %v", err)
+	}
+	if got, want := lineStrings(e.lines), []string{"abc"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("lines = %q, want %q", got, want)
+	}
+	if e.clipboard != "" {
+		t.Errorf("clipboard = %q, want %q", e.clipboard, "")
+	}
+}
+
+func TestPaste(t *testing.T) {
+	tests := []struct {
+		name       string
+		lines      []string
+		cursor     position
+		clipboard  string
+		wantLines  []string
+		wantCursor position
+		wantDirty  bool
+	}{
+		{
+			name: "one line into the middle of a line", lines: []string{"abcd"}, cursor: position{0, 2},
+			clipboard: "XY", wantLines: []string{"abXYcd"}, wantCursor: position{0, 4}, wantDirty: true,
+		},
+		{
+			name: "at the start of a line", lines: []string{"abcd"},
+			clipboard: "X", wantLines: []string{"Xabcd"}, wantCursor: position{0, 1}, wantDirty: true,
+		},
+		{
+			name: "at the end of a line", lines: []string{"ab", "cd"}, cursor: position{0, 2},
+			clipboard: "X", wantLines: []string{"abX", "cd"}, wantCursor: position{0, 3}, wantDirty: true,
+		},
+		{
+			name: "into an empty buffer", lines: []string{""},
+			clipboard: "XY", wantLines: []string{"XY"}, wantCursor: position{0, 2}, wantDirty: true,
+		},
+		{
+			name: "two lines into an empty buffer", lines: []string{""},
+			clipboard: "X\nY", wantLines: []string{"X", "Y"}, wantCursor: position{1, 1}, wantDirty: true,
+		},
+		{
+			name: "two lines into the middle of a line", lines: []string{"abcd"}, cursor: position{0, 2},
+			clipboard: "X\nY", wantLines: []string{"abX", "Ycd"}, wantCursor: position{1, 1}, wantDirty: true,
+		},
+		{
+			name: "three lines into the middle of a line", lines: []string{"abcd"}, cursor: position{0, 2},
+			clipboard: "X\nY\nZ", wantLines: []string{"abX", "Y", "Zcd"}, wantCursor: position{2, 1}, wantDirty: true,
+		},
+		{
+			name: "text that ends in a newline", lines: []string{"abcd"}, cursor: position{0, 2},
+			clipboard: "XY\n", wantLines: []string{"abXY", "cd"}, wantCursor: position{1, 0}, wantDirty: true,
+		},
+		{
+			name: "at the end of the buffer", lines: []string{"ab", "cd"}, cursor: position{1, 2},
+			clipboard: "X\nY", wantLines: []string{"ab", "cdX", "Y"}, wantCursor: position{2, 1}, wantDirty: true,
+		},
+		{
+			name: "keeps the lines after it", lines: []string{"ab", "cd", "ef"},
+			cursor: position{1, 1}, clipboard: "X\nY",
+			wantLines: []string{"ab", "cX", "Yd", "ef"}, wantCursor: position{2, 1}, wantDirty: true,
+		},
+		{
+			name: "multi byte runes", lines: []string{"ab"}, cursor: position{0, 1},
+			clipboard: "éé", wantLines: []string{"aééb"}, wantCursor: position{0, 3}, wantDirty: true,
+		},
+		{
+			name: "an empty clipboard does nothing", lines: []string{"ab"}, cursor: position{0, 1},
+			wantLines: []string{"ab"}, wantCursor: position{0, 1},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{
+				lines:     toLines(tt.lines),
+				cy:        tt.cursor.y,
+				cx:        tt.cursor.x,
+				clipboard: tt.clipboard,
+			}
+			if err := e.handleKey(keyCtrlV); err != nil {
+				t.Fatalf("handleKey: %v", err)
+			}
+			if got := lineStrings(e.lines); !reflect.DeepEqual(got, tt.wantLines) {
+				t.Errorf("lines = %q, want %q", got, tt.wantLines)
+			}
+			if e.cursor() != tt.wantCursor {
+				t.Errorf("cursor = %+v, want %+v", e.cursor(), tt.wantCursor)
+			}
+			if e.dirty != tt.wantDirty {
+				t.Errorf("dirty = %v, want %v", e.dirty, tt.wantDirty)
+			}
+			if e.clipboard != tt.clipboard {
+				t.Errorf("clipboard = %q, want %q", e.clipboard, tt.clipboard)
+			}
+		})
+	}
+}
+
+// A paste leaves the clipboard as it was, so it can be pasted again.
+func TestPasteTwice(t *testing.T) {
+	e := &editor{lines: toLines([]string{"ab"}), cx: 1, clipboard: "X\nY"}
+	for i := range 2 {
+		if err := e.handleKey(keyCtrlV); err != nil {
+			t.Fatalf("paste %d: %v", i, err)
+		}
+	}
+	if got, want := lineStrings(e.lines), []string{"aX", "YX", "Yb"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("lines = %q, want %q", got, want)
+	}
+	if want := (position{2, 1}); e.cursor() != want {
+		t.Errorf("cursor = %+v, want %+v", e.cursor(), want)
+	}
+}
+
+// Paste inserts at the cursor the way typing does, so a selection is dropped and
+// not replaced. See docs/features.md.
+func TestPasteDropsTheSelection(t *testing.T) {
+	e := selectedEditor([]string{"abcd"}, position{0, 1}, position{0, 3})
+	e.clipboard = "X"
+	if err := e.handleKey(keyCtrlV); err != nil {
+		t.Fatalf("handleKey: %v", err)
+	}
+	if got, want := lineStrings(e.lines), []string{"abcXd"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("lines = %q, want %q", got, want)
+	}
+	if e.selecting {
+		t.Error("selecting = true, want false")
+	}
+}
+
+// Cutting and pasting the same text leaves the buffer as it was.
+func TestCutAndPasteRoundTrip(t *testing.T) {
+	e := selectedEditor([]string{"abc", "def", "ghi"}, position{0, 1}, position{2, 2})
+	for i, k := range []key{keyCtrlX, keyCtrlV} {
+		if err := e.handleKey(k); err != nil {
+			t.Fatalf("key %d: %v", i, err)
+		}
+	}
+	if got, want := lineStrings(e.lines), []string{"abc", "def", "ghi"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("lines = %q, want %q", got, want)
+	}
+	if want := (position{2, 2}); e.cursor() != want {
+		t.Errorf("cursor = %+v, want %+v", e.cursor(), want)
+	}
+}
+
+func TestTextEnd(t *testing.T) {
+	tests := []struct {
+		name string
+		p    position
+		text string
+		want position
+	}{
+		{"nothing", position{1, 2}, "", position{1, 2}},
+		{"one rune", position{1, 2}, "x", position{1, 3}},
+		{"multi byte runes", position{1, 2}, "éé", position{1, 4}},
+		{"a newline", position{1, 2}, "\n", position{2, 0}},
+		{"two lines", position{1, 2}, "ab\ncde", position{2, 3}},
+		{"three lines", position{1, 2}, "a\nb\nc", position{3, 1}},
+		{"text that ends in a newline", position{1, 2}, "ab\n", position{2, 0}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := textEnd(tt.p, tt.text); got != tt.want {
+				t.Errorf("textEnd(%+v, %q) = %+v, want %+v", tt.p, tt.text, got, tt.want)
+			}
+		})
+	}
+}

@@ -15,10 +15,9 @@ Take a line off this list in the commit that fixes it.
 
 ## Keys
 
-- Ctrl + c and ctrl + z do nothing. Raw mode turns the signal keys off and led installs no handler, so ctrl + w is the only way out.
+- Raw mode turns the signal keys off and led installs no handler, so ctrl + z does nothing and ctrl + w is the only way out.
 - An escape sequence that arrives in pieces, over a slow link, is read as the escape key and then typed. See [terminal.md](terminal.md).
 - There is no undo.
-- Nothing uses the selection. There is no cut, copy or paste. See [features.md](features.md).
 
 ## Highlighting
 
