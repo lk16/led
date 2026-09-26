@@ -12,6 +12,7 @@ Take a line off this list in the commit that fixes it.
 ## Screen
 
 - Wide characters (CJK, emoji) count as one column everywhere, the status bar included. See [terminal.md](terminal.md).
+- A screen narrower than the line numbers draws them anyway, so every row runs past the width and wraps.
 
 ## Keys
 
@@ -21,5 +22,6 @@ Take a line off this list in the commit that fixes it.
 
 ## Speed
 
-- A bracket with no match is only known to have none at the first or the last line of the buffer, so the cursor on one reads every line. Opening a file reads it all once as well, to know what every line leaves open.
-- One key press at the end of a file of Go, measured: 0.06 ms at 1000 lines, and the same at 10 000 and at 100 000. With the cursor on a bracket: 0.08 ms.
+- A bracket that nothing closes is only known to have no match at the first or the last line of the buffer, so the cursor on one reads every line: 1.6 ms at 1000 lines, 17 ms at 10 000, 160 ms at 100 000. A bracket whose match is near costs only the lines in between.
+- A key press that adds or takes away a line rebuilds the list of lines: 0.08 ms at 1000 lines, 0.3 ms at 10 000, 1.5 ms at 100 000. A key press inside one line is 0.06 ms at all three.
+- Opening a file reads it once, from the first line, to know what every line leaves open.

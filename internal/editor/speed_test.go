@@ -66,3 +66,50 @@ func BenchmarkKeyPress(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkLineKeyPress measures a key press that adds a line and one that takes it
+// away again, which rebuilds the list of lines. See docs/bugs.md.
+func BenchmarkLineKeyPress(b *testing.B) {
+	for _, n := range []int{1000, 10000, 100000} {
+		b.Run(fmt.Sprintf("lines=%d", n), func(b *testing.B) {
+			e := benchEditor(n, false)
+			for i := 0; b.Loop(); i++ {
+				k := keyEnter
+				if i%2 == 1 {
+					k = keyBack
+				}
+				if err := e.handleKey(k); err != nil {
+					b.Fatalf("handleKey: %v", err)
+				}
+				if err := e.render(io.Discard); err != nil {
+					b.Fatalf("render: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkUnmatchedBracket measures a draw with the cursor on a bracket that
+// nothing above it closes, the one walk that still reads every line.
+// See docs/bugs.md.
+func BenchmarkUnmatchedBracket(b *testing.B) {
+	for _, n := range []int{1000, 10000, 100000} {
+		b.Run(fmt.Sprintf("lines=%d", n), func(b *testing.B) {
+			e := benchEditor(n, false)
+			e.lines = append(e.lines, []rune(")"))
+			e.cy, e.cx = len(e.lines)-1, 0
+			if err := e.render(io.Discard); err != nil {
+				b.Fatalf("render: %v", err)
+			}
+			if e.pair.color != unmatchedColor {
+				b.Fatalf("pair = %+v, want the color of a bracket without a match", e.pair)
+			}
+			for b.Loop() {
+				e.pair = bracketPair{}
+				if err := e.render(io.Discard); err != nil {
+					b.Fatalf("render: %v", err)
+				}
+			}
+		})
+	}
+}
