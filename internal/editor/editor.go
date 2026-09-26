@@ -35,9 +35,10 @@ type editor struct {
 	colOff       int         // first screen column of a line shown on screen
 	rows         int
 	cols         int
-	dirty        bool // buffer has edits that are not saved
-	finalNewline bool // the file ends with a newline, so a save writes one
-	prompt       bool // asking what to do with those edits
+	alert        string // error shown in the status bar, empty for none
+	dirty        bool   // buffer has edits that are not saved
+	finalNewline bool   // the file ends with a newline, so a save writes one
+	prompt       bool   // asking what to do with those edits
 	quit         bool
 }
 
@@ -140,12 +141,16 @@ func (e *editor) applyKey(k key) error {
 		e.backspace()
 	case keyDelete:
 		e.deleteRune()
+	case keyEscape:
+		// Only the prompt answers escape.
 	default:
 		switch {
 		case k.isMove():
 			e.move(k)
 		case k >= ' ' && k <= utf8.MaxRune:
 			e.insert(rune(k))
+		case k.isControl():
+			e.alert = k.name() + " is not a key led knows"
 		}
 	}
 	return nil

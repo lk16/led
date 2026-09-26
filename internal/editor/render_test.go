@@ -395,6 +395,32 @@ func TestRenderStatusUnsavedChanges(t *testing.T) {
 	}
 }
 
+func TestRenderStatusAlert(t *testing.T) {
+	tests := []struct {
+		name   string
+		alert  string
+		dirty  bool
+		prompt bool
+		cols   int
+		want   string
+	}{
+		{"an error gets the alert background", "oops", false, false, 8, alertBg + "oops    " + noBg},
+		{"an error takes the place of the path", "oops", true, false, 8, alertBg + "oops    " + noBg},
+		{"a long error is clipped to the width", "oops a lot", false, false, 4, alertBg + "oops" + noBg},
+		{"the prompt takes the whole bar", "oops", true, true, 8, alertBg + unsavedPrompt[:8] + noBg},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{name: "f.txt", cols: tt.cols, alert: tt.alert, dirty: tt.dirty, prompt: tt.prompt}
+			var b bytes.Buffer
+			e.renderStatus(&b)
+			if got := b.String(); got != tt.want {
+				t.Errorf("renderStatus() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestExpandTabs(t *testing.T) {
 	tests := []struct {
 		name string

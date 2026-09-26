@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func runLoop(t *testing.T, e *editor, in string) string {
@@ -18,6 +19,64 @@ func runLoop(t *testing.T, e *editor, in string) string {
 		t.Fatalf("loop: %v", err)
 	}
 	return b.String()
+}
+
+// frames hands the test every screen the loop draws, one per write.
+type frames chan string
+
+func (f frames) Write(p []byte) (int, error) {
+	f <- string(p)
+	return len(p), nil
+}
+
+// waitFor returns once a drawn screen matches want.
+func (f frames) waitFor(t *testing.T, what string, want func(frame string) bool) {
+	t.Helper()
+	for {
+		select {
+		case frame := <-f:
+			if want(frame) {
+				return
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("no screen was drawn %s", what)
+		}
+	}
+}
+
+// runLoopInBackground runs the loop on keys written to in, drawing to out.
+func runLoopInBackground(e *editor, in io.Reader, out io.Writer) <-chan error {
+	done := make(chan error, 1)
+	go func() { done <- e.loop(bufio.NewReader(in), bufio.NewWriter(out)) }()
+	return done
+}
+
+func TestLoopClearsTheAlertWithoutAKeyPress(t *testing.T) {
+	defer func(d time.Duration) { alertTimeout = d }(alertTimeout)
+	alertTimeout = 10 * time.Millisecond
+
+	e := newTestEditor(t, "a\n")
+	e.rows, e.cols = 2, 40
+	keys, writeKey := io.Pipe()
+	drawn := make(frames, 8)
+	done := runLoopInBackground(e, keys, drawn)
+
+	if _, err := writeKey.Write([]byte{0x02}); err != nil {
+		t.Fatal(err)
+	}
+	alert := alertBg + "ctrl + b is not a key led knows"
+	drawn.waitFor(t, "with the error", func(frame string) bool { return strings.Contains(frame, alert) })
+	drawn.waitFor(t, "without the error", func(frame string) bool { return !strings.Contains(frame, alert) })
+
+	if _, err := writeKey.Write([]byte{0x17}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("loop: %v", err)
+	}
+	if err := writeKey.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestLoopTypesAndQuits(t *testing.T) {

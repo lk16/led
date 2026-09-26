@@ -49,6 +49,16 @@ func (k key) isVertical() bool {
 	return false
 }
 
+// isControl reports whether k is a control byte, a key pressed with ctrl.
+func (k key) isControl() bool {
+	return k < ' '
+}
+
+// name returns k the way docs/features.md writes it, e.g. "ctrl + b".
+func (k key) name() string {
+	return "ctrl + " + strings.ToLower(string(rune(k+0x40)))
+}
+
 // isMove reports whether k moves the cursor, with or without modifiers.
 func (k key) isMove() bool {
 	switch k &^ (modShift | modCtrl) {

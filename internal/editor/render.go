@@ -69,8 +69,11 @@ func (e *editor) renderStatus(b *bytes.Buffer) {
 	if e.dirty {
 		text = "*" + text
 	}
-	if e.prompt {
+	switch {
+	case e.prompt:
 		bg, text = alertBg, unsavedPrompt
+	case e.alert != "":
+		bg, text = alertBg, e.alert
 	}
 	fmt.Fprintf(b, "%s%-*s%s", bg, e.cols, clip([]rune(text), e.cols), noBg)
 }

@@ -35,6 +35,11 @@ few milliseconds instead would make the escape key itself feel slow.
 A key that turns out not to start a sequence is put back, so pressing escape and
 then a letter types that letter.
 
+Ctrl + a letter arrives as one control byte, so led knows the combination and can
+say in the status bar that it has no binding for it. Ctrl with an arrow, home, end
+or page up or down arrives as an escape sequence instead, where the modifier is
+only a parameter, so led says nothing about those.
+
 Home, end, delete and page up or down come as a number and a `~`, `\x1b[3~` for
 delete. Terminals disagree: home is `\x1b[1~`, `\x1b[7~` or `\x1b[H`, end is
 `\x1b[4~`, `\x1b[8~` or `\x1b[F`. led takes all of them. A modifier parameter is

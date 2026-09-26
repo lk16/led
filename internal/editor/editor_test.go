@@ -566,9 +566,14 @@ func TestHandleKey(t *testing.T) {
 			want: []string{"ab", "cd"},
 		},
 		{
-			name: "other control key is ignored",
+			name: "other control key edits nothing",
 			k:    key(1),
 			want: []string{"ab", "cd"},
+			check: func(t *testing.T, e *editor) {
+				if e.alert == "" {
+					t.Error("alert is empty, want an error about the key")
+				}
+			},
 		},
 		{
 			name: "arrow key moves the cursor",
@@ -592,6 +597,41 @@ func TestHandleKey(t *testing.T) {
 			}
 			if tt.check != nil {
 				tt.check(t, e)
+			}
+		})
+	}
+}
+
+func TestUnhandledCtrlKeyAlerts(t *testing.T) {
+	tests := []struct {
+		name string
+		k    key
+		want string
+	}{
+		{"ctrl + b has no binding", key(0x02), "ctrl + b is not a key led knows"},
+		{"ctrl + z has no binding", key(0x1a), "ctrl + z is not a key led knows"},
+		{"ctrl + backslash has no binding", key(0x1c), "ctrl + \\ is not a key led knows"},
+		{"ctrl + s saves", keyCtrlS, ""},
+		{"ctrl + w closes", keyCtrlW, ""},
+		{"tab inserts a tab", keyTab, ""},
+		{"enter splits the line", keyEnter, ""},
+		{"backspace deletes", keyBack, ""},
+		{"delete removes a rune", keyDelete, ""},
+		{"escape does nothing", keyEscape, ""},
+		{"a typed rune is inserted", 'x', ""},
+		{"ctrl + page up is an escape sequence", keyPageUp | modCtrl, ""},
+		{"ctrl + page down is an escape sequence", keyPageDown | modCtrl, ""},
+		{"an unknown escape sequence", keyUnknown, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newTestEditor(t, "ab\ncd\n")
+			e.cx = 1
+			if err := e.handleKey(tt.k); err != nil {
+				t.Fatalf("handleKey: %v", err)
+			}
+			if e.alert != tt.want {
+				t.Errorf("alert = %q, want %q", e.alert, tt.want)
 			}
 		})
 	}
