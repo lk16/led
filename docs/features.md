@@ -15,3 +15,5 @@
 - Shift + arrows select text. With ctrl they select a word at a time. Shift works the same with home, end and page up or down.
 - Nothing uses the selection yet. There is no cut, copy or paste.
 - Dark mode only.
+
+What led gets wrong is in [bugs.md](bugs.md).

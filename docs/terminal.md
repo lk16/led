@@ -60,3 +60,5 @@ scrolling.
 ## Open
 
 Wide characters (CJK, emoji) take 2 columns. Not handled yet. Decide before supporting them.
+
+The rest of what led gets wrong is in [bugs.md](bugs.md).

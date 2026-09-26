@@ -67,7 +67,7 @@ skipped, and with the cursor on one of those nothing is colored. The scan asks
 the same line scanner that colors the text and takes every rune it leaves plain.
 A keyword or a number can never hold a bracket, so plain is the whole test.
 
-The scan walks the buffer on every key press.
+The scan walks the buffer on every key press. See [bugs.md](bugs.md).
 
 ## Over more than one line
 
