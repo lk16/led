@@ -323,7 +323,7 @@ func visibleRows(out string) []string {
 // which left old text on screen while scrolling through an indented file.
 func TestRenderScrollingIndentedFileFillsEveryRow(t *testing.T) {
 	lines := []string{"func main() {", "\tfor i := range 3 {", "\t\tprintln(i, \"a long line of text\")", "\t}", "}"}
-	e := &editor{name: "f.go", lines: toLines(lines), rows: 4, cols: 24, keywords: keywordsFor("f.go")}
+	e := &editor{name: "f.go", lines: toLines(lines), rows: 4, cols: 24, lang: languageFor("f.go")}
 	for e.cy = 0; e.cy < len(e.lines); e.cy++ {
 		var b bytes.Buffer
 		if err := e.render(&b); err != nil {
@@ -397,10 +397,10 @@ func TestRenderLineSelection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := &editor{
-				lines: toLines(tt.lines), keywords: keywordsFor(tt.file),
+				lines: toLines(tt.lines), lang: languageFor(tt.file),
 				anchor: tt.anchor, cx: tt.cx, cy: tt.cy, selecting: tt.selecting,
 			}
-			if got := e.renderLine(tt.row, tt.width); got != tt.want {
+			if got, _ := e.renderLine(tt.row, tt.width, lineState{}); got != tt.want {
 				t.Errorf("renderLine(%d, %d) = %q, want %q", tt.row, tt.width, got, tt.want)
 			}
 		})

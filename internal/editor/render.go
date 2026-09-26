@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -29,9 +30,12 @@ func (e *editor) render(w io.Writer) error {
 
 	var b bytes.Buffer
 	b.WriteString("\x1b[?25l\x1b[H")
+	st := e.stateAt(e.rowOff)
 	for i := range e.textRows() {
 		if row := e.rowOff + i; row < len(e.lines) {
-			fmt.Fprintf(&b, "%s%*d %s%s", dim, numWidth, row+1, reset, e.renderLine(row, e.cols-gutter))
+			var text string
+			text, st = e.renderLine(row, e.cols-gutter, st)
+			fmt.Fprintf(&b, "%s%*d %s%s", dim, numWidth, row+1, reset, text)
 		} else {
 			b.WriteString(dim + "~" + reset)
 		}
@@ -67,16 +71,71 @@ func (e *editor) scroll() {
 	}
 }
 
-// renderLine returns row as it is shown, at most width columns wide.
-func (e *editor) renderLine(row, width int) string {
-	line := clipRunes(expandTabs(e.lines[row]), width)
-	from, to := e.selectedColumns(row, len(line))
-	if from == to {
-		return highlight(string(line), e.keywords)
+// stateAt returns the highlight state at the start of row, from the lines above it.
+func (e *editor) stateAt(row int) lineState {
+	var st lineState
+	for i := 0; i < row && i < len(e.lines); i++ {
+		_, st = e.lang.scan(e.lines[i], st)
 	}
-	return highlight(string(line[:from]), e.keywords) + selBg +
-		highlight(string(line[from:to]), e.keywords) + noBg +
-		highlight(string(line[to:]), e.keywords)
+	return st
+}
+
+// renderLine returns row as it is shown, at most width columns wide. st is the
+// highlight state at the start of the row, the returned state is the one after it.
+func (e *editor) renderLine(row, width int, st lineState) (string, lineState) {
+	line := expandTabs(e.lines[row])
+	spans, next := e.lang.scan(line, st)
+	line = clipRunes(line, width)
+	from, to := e.selectedColumns(row, len(line))
+	return paint(line, colorsOf(line, spans), from, to), next
+}
+
+// colorsOf returns the color of every column of line.
+func colorsOf(line []rune, spans []span) []string {
+	colors := make([]string, len(line))
+	start := 0
+	for _, s := range spans {
+		for i := start; i < s.end && i < len(colors); i++ {
+			colors[i] = s.color
+		}
+		start = s.end
+	}
+	return colors
+}
+
+// paint draws line in the colors of its columns, with a blue background over
+// columns from up to to. See docs/terminal.md.
+func paint(line []rune, colors []string, from, to int) string {
+	var b strings.Builder
+	color := ""
+	setColor := func(c string) {
+		if c == color {
+			return
+		}
+		if c == "" {
+			b.WriteString(reset)
+		} else {
+			b.WriteString(c)
+		}
+		color = c
+	}
+
+	for i, r := range line {
+		if from != to && i == from {
+			b.WriteString(selBg)
+		}
+		if from != to && i == to {
+			setColor("")
+			b.WriteString(noBg)
+		}
+		setColor(colors[i])
+		b.WriteRune(r)
+	}
+	setColor("")
+	if from != to && to == len(line) {
+		b.WriteString(noBg)
+	}
+	return b.String()
 }
 
 // selectedColumns returns the columns of row that the selection covers, both 0

@@ -22,8 +22,8 @@ func (p position) before(q position) bool {
 
 type editor struct {
 	path      string
-	name      string          // path as shown in the status bar
-	keywords  map[string]bool // keywords to highlight, nil for an unknown file type
+	name      string    // path as shown in the status bar
+	lang      *language // how to color the file, nil for an unknown file type
 	lines     [][]rune
 	cx, cy    int      // cursor column and row in the buffer
 	anchor    position // other end of the selection, only set while selecting
@@ -43,12 +43,12 @@ func newEditor(path string) (*editor, error) {
 	}
 	home, _ := os.UserHomeDir()
 	e := &editor{
-		path:     path,
-		name:     shortPath(path, home),
-		keywords: keywordsFor(path),
-		lines:    splitLines(data),
-		rows:     24,
-		cols:     80,
+		path:  path,
+		name:  shortPath(path, home),
+		lang:  languageFor(path),
+		lines: splitLines(data),
+		rows:  24,
+		cols:  80,
 	}
 	return e, nil
 }

@@ -522,10 +522,10 @@ func TestAnswerPromptFailedSaveDoesNotQuit(t *testing.T) {
 	}
 }
 
-func TestNewEditorPicksKeywordsByExtension(t *testing.T) {
+func TestNewEditorPicksTheLanguageByExtension(t *testing.T) {
 	tests := []struct {
 		file string
-		want bool // the editor has keywords
+		want bool // the editor has a language
 	}{
 		{"main.go", true},
 		{"notes.txt", false},
@@ -536,8 +536,8 @@ func TestNewEditorPicksKeywordsByExtension(t *testing.T) {
 			if err != nil {
 				t.Fatalf("newEditor: %v", err)
 			}
-			if got := e.keywords != nil; got != tt.want {
-				t.Errorf("keywords set = %v, want %v", got, tt.want)
+			if got := e.lang != nil; got != tt.want {
+				t.Errorf("language set = %v, want %v", got, tt.want)
 			}
 		})
 	}
