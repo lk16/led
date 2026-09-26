@@ -96,6 +96,14 @@ func TestMatchBracket(t *testing.T) {
 			cursor: position{0, 1}, want: position{0, 6}, wantMatch: true, wantColor: parenColor,
 		},
 		{
+			name: "back over a stray closing bracket of another kind", lines: []string{"f(a] b)"},
+			cursor: position{0, 6}, want: position{0, 1}, wantMatch: true, wantColor: parenColor,
+		},
+		{
+			name: "back over two stray closing brackets", lines: []string{"f(a] b} c)"},
+			cursor: position{0, 9}, want: position{0, 1}, wantMatch: true, wantColor: parenColor,
+		},
+		{
 			name: "over lines", lines: []string{"f(", "\ta,", ")"},
 			cursor: position{0, 1}, want: position{2, 0}, wantMatch: true, wantColor: parenColor,
 		},
