@@ -19,10 +19,6 @@ Take a line off this list in the commit that fixes it.
 - An escape sequence that arrives in pieces, over a slow link, is read as the escape key and then typed. See [terminal.md](terminal.md).
 - Undo does not clear the unsaved changes mark. Taking every change back still leaves the buffer as changed.
 
-## Highlighting
-
-- Python triple quotes are colored only on the lines where a quote opens and where one closes. See [highlighting.md](highlighting.md).
-
 ## Speed
 
 - Every key press walks the lines above the screen to know which strings and comments are still open at the top of it, and with the cursor on a bracket it walks the buffer from the first line again to find the match. Nothing is kept between key presses.

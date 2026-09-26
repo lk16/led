@@ -352,6 +352,35 @@ func TestScanTemplateSubstitutions(t *testing.T) {
 	}
 }
 
+func TestScanPythonTripleQuotes(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		line string
+		want string
+	}{
+		{"opened and closed on one line", "script.py", `s = """a"""`, `s = ` + str(`"""a"""`)},
+		{"single quotes", "script.py", `s = '''a'''`, `s = ` + str(`'''a'''`)},
+		{"code after the closing quotes", "script.py", `s = """a""" + b`, `s = ` + str(`"""a"""`) + ` + b`},
+		{"a keyword inside stays plain", "script.py", `s = """def"""`, `s = ` + str(`"""def"""`)},
+		{"three single quotes inside three double ones", "script.py", `s = """a'''b"""`, `s = ` + str(`"""a'''b"""`)},
+		{"one quote inside does not close it", "script.py", `s = """a"b"""`, `s = ` + str(`"""a"b"""`)},
+		{
+			"an escape inside", "script.py", `s = """a\nb"""`,
+			`s = ` + stringColor + `"""a` + escapeColor + `\n` + stringColor + `b"""` + reset,
+		},
+		{"an empty string is no opening triple quote", "script.py", `s = "" + b`, `s = ` + str(`""`) + ` + b`},
+		{"a triple quote that never closes", "script.py", `s = """a`, `s = ` + str(`"""a`)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := colored(tt.path, tt.line); got != tt.want {
+				t.Errorf("colored(%q) for %s = %q, want %q", tt.line, tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestScanComments(t *testing.T) {
 	tests := []struct {
 		name string
@@ -466,6 +495,54 @@ func TestScanAcrossLines(t *testing.T) {
 			path:  "app.js",
 			lines: []string{"s = `a${`b", "c`}d`"},
 			want:  []string{"s = " + str("`a${`b"), str("c`}d`")},
+		},
+		{
+			name:  "a docstring covers the lines between its quotes",
+			path:  "script.py",
+			lines: []string{"def f():", `    """Doc`, "    x = 1", `    """`, "    return 2"},
+			want: []string{
+				color("def") + " f():",
+				"    " + str(`"""Doc`),
+				str("    x = 1"),
+				str(`    """`),
+				"    " + color("return") + " " + num("2"),
+			},
+		},
+		{
+			name:  "a docstring in three single quotes",
+			path:  "script.py",
+			lines: []string{"s = '''a", "def", "b'''"},
+			want:  []string{"s = " + str("'''a"), str("def"), str("b'''")},
+		},
+		{
+			name:  "three single quotes inside a docstring do not close it",
+			path:  "script.py",
+			lines: []string{`s = """a`, "'''", `b"""`},
+			want:  []string{"s = " + str(`"""a`), str("'''"), str(`b"""`)},
+		},
+		{
+			name:  "a docstring that never closes runs to the end of the file",
+			path:  "script.py",
+			lines: []string{`s = """a`, "def"},
+			want:  []string{"s = " + str(`"""a`), str("def")},
+		},
+		{
+			name:  "an empty string ends with its line",
+			path:  "script.py",
+			lines: []string{`s = ""`, "def"},
+			want:  []string{"s = " + str(`""`), color("def")},
+		},
+		{
+			name:  "three quotes do not span lines in go",
+			path:  "main.go",
+			lines: []string{`s := """`, "func"},
+			want:  []string{"s := " + str(`"""`), color("func")},
+		},
+		{
+			name:  "three quotes do not span lines in javascript",
+			path:  "app.js",
+			lines: []string{`s = """`, "null"},
+			want:  []string{"s = " + str(`"""`), color("null")},
 		},
 		{
 			name:  "an unclosed plain string ends with its line",

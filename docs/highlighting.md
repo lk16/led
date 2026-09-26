@@ -13,9 +13,9 @@ A file with any other extension gets no highlighting. led always opens a named f
 
 A `language` in `internal/editor/highlight.go` holds the keyword list, the line
 comment marker, the block comment markers, the string delimiters, which of those
-delimiters open a string without escapes, the opener of code in a string, and
-whether the language has lifetimes. A new language is a new entry in that table,
-nothing else.
+delimiters may run over more lines, which open a string without escapes, the
+opener of code in a string, and whether the language has lifetimes. A new language
+is a new entry in that table, nothing else.
 
 ## Colors
 
@@ -43,7 +43,8 @@ does not.
 
 - A keyword is a whole word: letters, digits and `_` around it make it plain text again. Keywords in a string or a comment are plain.
 - A number is a word that starts with a digit, plus a dot between digits. So `0xff`, `1e9` and `3.14` are numbers, and `x2` is not.
-- A string runs to its closing quote. Inside `"` and `'` a backslash escapes the next character.
+- A string runs to its closing delimiter. Inside `"` and `'` a backslash escapes the next character.
+- A delimiter can be more than one rune. Python's `"""` and `'''` are delimiters of their own, and they win over the single quote they start with, so `"""a"""` is one string and `""` is an empty one.
 - An escape sequence is a backslash and what belongs to it: `\x` and two hex digits, `\u` and four, `\U` and eight, `\u{...}` up to the brace, up to three octal digits, or one other character. Fewer digits than that stop it, so `\xz` is just `\x`.
 - A `'` in a language with lifetimes, so Rust, opens a string only when it closes right after one character or one escape: `'a'`, `'\n'`, `'\''`, `'\u{1F600}'`. Anything else is a lifetime, `&'a str` or `'static`, and stays plain. Go and Python have no lifetimes, so there a `'` always opens a string.
 - Which strings have escapes is per language, not per delimiter. A Go raw string, `` `a\n` ``, has none, a JavaScript template literal has them.
@@ -76,16 +77,15 @@ The scan walks the buffer on every key press. See [bugs.md](bugs.md).
 
 ## Over more than one line
 
-A block comment and a string in backticks, so a Go raw string and a JavaScript
-template literal, may span lines, and so may a `${...}` in such a template
-literal. led scans from the first line of the file down to the first line on
-screen to know what is still open there.
+A block comment and a string whose delimiter may span lines, so a Go raw string, a
+JavaScript template literal and a Python triple-quoted string, run on until they
+close. A `${...}` in a template literal does too. led scans from the first line of
+the file down to the first line on screen to know what is still open there.
 
 What a line leaves open is a `lineState`: a flag for a block comment and a string
-with one mark per open string and `${...}`, the innermost last. It is a value led
-only reads, so it is safe to keep and to copy.
+with one mark per open string and `${...}`, the innermost last. A mark for a string
+is the first rune of its delimiter, so three quotes take one mark like a backtick
+does. The state is a value led only reads, so it is safe to keep and to copy.
 
-Nothing else spans lines. A `"` string that is not closed ends with its line, and
-so does a Rust lifetime, which opens no string at all. Python's triple quotes are
-not handled: a docstring is only colored on the lines where a quote opens and
-closes.
+Nothing else spans lines. A `"` or `'` string that is not closed ends with its
+line, and so does a Rust lifetime, which opens no string at all.
