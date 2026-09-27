@@ -78,6 +78,34 @@ func TestLanguageFor(t *testing.T) {
 	}
 }
 
+// A mark in lineState.nest is only the first rune of a delimiter, so quoteOf has
+// to give the whole delimiter back. See docs/highlighting.md.
+func TestQuoteOf(t *testing.T) {
+	tests := []struct {
+		name      string
+		path      string
+		mark      rune
+		wantQuote string
+		wantMulti bool
+	}{
+		{"a go backtick runs over lines", "main.go", '`', "`", true},
+		{"a go double quote ends with its line", "main.go", '"', `"`, false},
+		{"a javascript backtick runs over lines", "app.js", '`', "`", true},
+		{"a python double quote mark stands for three", "script.py", '"', `"""`, true},
+		{"a python single quote mark stands for three", "script.py", '\'', `'''`, true},
+		{"rust has no delimiter that runs over lines", "lib.rs", '"', `"`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			quote, multi := languageFor(tt.path).quoteOf(tt.mark)
+			if quote != tt.wantQuote || multi != tt.wantMulti {
+				t.Errorf("quoteOf(%q) for %s = %q, %v, want %q, %v",
+					tt.mark, tt.path, quote, multi, tt.wantQuote, tt.wantMulti)
+			}
+		})
+	}
+}
+
 func TestKeywordsPerLanguageDoNotLeak(t *testing.T) {
 	tests := []struct {
 		path string
@@ -154,6 +182,56 @@ func TestScanStrings(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := colored(tt.path, tt.line); got != tt.want {
 				t.Errorf("colored(%q) = %q, want %q", tt.line, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestScanRustLifetimes(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		line string
+		want string
+	}{
+		{"a lifetime in a reference", "lib.rs", `&'a str`, `&'a str`},
+		{"a lifetime between angle brackets", "lib.rs", `<'a>`, `<'a>`},
+		{"the static lifetime", "lib.rs", `&'static str`, `&'static str`},
+		{
+			"lifetimes in a function", "lib.rs", `fn f<'a>(x: &'a str) -> &'a str`,
+			color("fn") + ` f<'a>(x: &'a str) -> &'a str`,
+		},
+		{"a character literal", "lib.rs", `let c = 'a';`, color("let") + ` c = ` + str(`'a'`) + `;`},
+		{"a space in a character literal", "lib.rs", `' '`, str(`' '`)},
+		{
+			"an escape in a character literal", "lib.rs", `'\n'`,
+			stringColor + `'` + escapeColor + `\n` + stringColor + `'` + reset,
+		},
+		{
+			"an escaped backslash in a character literal", "lib.rs", `'\\'`,
+			stringColor + `'` + escapeColor + `\\` + stringColor + `'` + reset,
+		},
+		{
+			"an escaped quote in a character literal", "lib.rs", `'\''`,
+			stringColor + `'` + escapeColor + `\'` + stringColor + `'` + reset,
+		},
+		{
+			"a braced unicode escape in a character literal", "lib.rs", `'\u{1F600}'`,
+			stringColor + `'` + escapeColor + `\u{1F600}` + stringColor + `'` + reset,
+		},
+		{"a quote that never closes stays plain", "lib.rs", `let c = 'a`, color("let") + ` c = 'a`},
+		{"a quote at the end of the line stays plain", "lib.rs", `let c = '`, color("let") + ` c = '`},
+		{"more than one character is no literal", "lib.rs", `'ab'`, `'ab'`},
+		{"a keyword in a string after a lifetime", "lib.rs", `&'a "fn"`, `&'a ` + str(`"fn"`)},
+		{"go has no lifetimes", "main.go", `x := 'ab'`, `x := ` + str(`'ab'`)},
+		{"an unclosed go quote opens a string", "main.go", `x := 'a`, `x := ` + str(`'a`)},
+		{"python has no lifetimes", "script.py", `s = 'ab'`, `s = ` + str(`'ab'`)},
+		{"an unclosed python quote opens a string", "script.py", `s = 'a`, `s = ` + str(`'a`)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := colored(tt.path, tt.line); got != tt.want {
+				t.Errorf("colored(%q) for %s = %q, want %q", tt.line, tt.path, got, tt.want)
 			}
 		})
 	}
@@ -261,6 +339,76 @@ func TestScanTemplateLiteralOverLinesHasEscapes(t *testing.T) {
 	}
 }
 
+func TestScanTemplateSubstitutions(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		line string
+		want string
+	}{
+		{"a name between the braces", "app.js", "`a${b}c`", str("`a${") + "b" + str("}c`")},
+		{
+			"numbers between the braces", "app.js", "`a${1 + 2}c`",
+			stringColor + "`a${" + numberColor + "1" + reset + " + " + numberColor + "2" + stringColor + "}c`" + reset,
+		},
+		{
+			"a keyword between the braces", "app.js", "`${null}`",
+			stringColor + "`${" + keywordColor + "null" + stringColor + "}`" + reset,
+		},
+		{"a string between the braces", "app.js", "`${\"a\" + b}`", str("`${\"a\"") + " + b" + str("}`")},
+		{"nested braces", "app.js", "`${ {a: 1} }`", str("`${") + " {a: " + num("1") + "} " + str("}`")},
+		{"a nested template literal", "app.js", "`${`x${y}z`}`", str("`${`x${") + "y" + str("}z`}`")},
+		{
+			"a comment between the braces", "app.js", "`${b /* c */}`",
+			stringColor + "`${" + reset + "b " + commentColor + "/* c */" + stringColor + "}`" + reset,
+		},
+		{
+			"an escaped opener stays a string", "app.js", "`a\\${b}c`",
+			stringColor + "`a" + escapeColor + "\\$" + stringColor + "{b}c`" + reset,
+		},
+		{"braces that never close", "app.js", "`a${b", str("`a${") + "b"},
+		{"a stray closing brace ends the substitution", "app.js", "`${}`", str("`${}`")},
+		{"a plain string keeps the braces", "app.js", `x = "a${b}c"`, `x = ` + str(`"a${b}c"`)},
+		{"go has no substitutions", "main.go", "s := `a${b}c`", "s := " + str("`a${b}c`")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := colored(tt.path, tt.line); got != tt.want {
+				t.Errorf("colored(%q) for %s = %q, want %q", tt.line, tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestScanPythonTripleQuotes(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		line string
+		want string
+	}{
+		{"opened and closed on one line", "script.py", `s = """a"""`, `s = ` + str(`"""a"""`)},
+		{"single quotes", "script.py", `s = '''a'''`, `s = ` + str(`'''a'''`)},
+		{"code after the closing quotes", "script.py", `s = """a""" + b`, `s = ` + str(`"""a"""`) + ` + b`},
+		{"a keyword inside stays plain", "script.py", `s = """def"""`, `s = ` + str(`"""def"""`)},
+		{"three single quotes inside three double ones", "script.py", `s = """a'''b"""`, `s = ` + str(`"""a'''b"""`)},
+		{"one quote inside does not close it", "script.py", `s = """a"b"""`, `s = ` + str(`"""a"b"""`)},
+		{
+			"an escape inside", "script.py", `s = """a\nb"""`,
+			`s = ` + stringColor + `"""a` + escapeColor + `\n` + stringColor + `b"""` + reset,
+		},
+		{"an empty string is no opening triple quote", "script.py", `s = "" + b`, `s = ` + str(`""`) + ` + b`},
+		{"a triple quote that never closes", "script.py", `s = """a`, `s = ` + str(`"""a`)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := colored(tt.path, tt.line); got != tt.want {
+				t.Errorf("colored(%q) for %s = %q, want %q", tt.line, tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestScanComments(t *testing.T) {
 	tests := []struct {
 		name string
@@ -354,6 +502,90 @@ func TestScanAcrossLines(t *testing.T) {
 			path:  "app.js",
 			lines: []string{"s = `a", "b` + c"},
 			want:  []string{"s = " + str("`a"), str("b`") + " + c"},
+		},
+		{
+			name:  "a substitution on the second line of a template literal",
+			path:  "app.js",
+			lines: []string{"s = `a", "b${c}d`"},
+			want:  []string{"s = " + str("`a"), str("b${") + "c" + str("}d`")},
+		},
+		{
+			name:  "a substitution goes on over lines",
+			path:  "app.js",
+			lines: []string{"s = `a${1", "+ 2}b`"},
+			want: []string{
+				"s = " + stringColor + "`a${" + numberColor + "1" + reset,
+				"+ " + numberColor + "2" + stringColor + "}b`" + reset,
+			},
+		},
+		{
+			name:  "a template literal in a substitution goes on over lines",
+			path:  "app.js",
+			lines: []string{"s = `a${`b", "c`}d`"},
+			want:  []string{"s = " + str("`a${`b"), str("c`}d`")},
+		},
+		{
+			name:  "an unclosed string in a substitution ends with its line",
+			path:  "app.js",
+			lines: []string{"s = `${\"a", "b}`"},
+			want:  []string{"s = " + str("`${\"a"), "b" + str("}`")},
+		},
+		{
+			name:  "a block comment in a substitution goes on over lines",
+			path:  "app.js",
+			lines: []string{"s = `${ /* a", "*/ }`"},
+			want: []string{
+				"s = " + stringColor + "`${" + reset + " " + comment("/* a"),
+				comment("*/") + " " + str("}`"),
+			},
+		},
+		{
+			name:  "a docstring covers the lines between its quotes",
+			path:  "script.py",
+			lines: []string{"def f():", `    """Doc`, "    x = 1", `    """`, "    return 2"},
+			want: []string{
+				color("def") + " f():",
+				"    " + str(`"""Doc`),
+				str("    x = 1"),
+				str(`    """`),
+				"    " + color("return") + " " + num("2"),
+			},
+		},
+		{
+			name:  "a docstring in three single quotes",
+			path:  "script.py",
+			lines: []string{"s = '''a", "def", "b'''"},
+			want:  []string{"s = " + str("'''a"), str("def"), str("b'''")},
+		},
+		{
+			name:  "three single quotes inside a docstring do not close it",
+			path:  "script.py",
+			lines: []string{`s = """a`, "'''", `b"""`},
+			want:  []string{"s = " + str(`"""a`), str("'''"), str(`b"""`)},
+		},
+		{
+			name:  "a docstring that never closes runs to the end of the file",
+			path:  "script.py",
+			lines: []string{`s = """a`, "def"},
+			want:  []string{"s = " + str(`"""a`), str("def")},
+		},
+		{
+			name:  "an empty string ends with its line",
+			path:  "script.py",
+			lines: []string{`s = ""`, "def"},
+			want:  []string{"s = " + str(`""`), color("def")},
+		},
+		{
+			name:  "three quotes do not span lines in go",
+			path:  "main.go",
+			lines: []string{`s := """`, "func"},
+			want:  []string{"s := " + str(`"""`), color("func")},
+		},
+		{
+			name:  "three quotes do not span lines in javascript",
+			path:  "app.js",
+			lines: []string{`s = """`, "null"},
+			want:  []string{"s = " + str(`"""`), color("null")},
 		},
 		{
 			name:  "an unclosed plain string ends with its line",

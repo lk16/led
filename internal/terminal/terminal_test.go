@@ -114,6 +114,20 @@ func TestSize(t *testing.T) {
 	}
 }
 
+// A terminal that was never told its size answers the ioctl with zeros and no
+// error, so led draws on a screen of no rows and no columns. See docs/terminal.md.
+func TestSizeOfATerminalWithoutASize(t *testing.T) {
+	f := openPTY(t)
+
+	rows, cols, err := Size(int(f.Fd()))
+	if err != nil {
+		t.Fatalf("Size: %v", err)
+	}
+	if rows != 0 || cols != 0 {
+		t.Errorf("Size = %d, %d, want 0, 0", rows, cols)
+	}
+}
+
 func TestSizeNotATerminal(t *testing.T) {
 	f, err := os.CreateTemp(t.TempDir(), "file")
 	if err != nil {

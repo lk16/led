@@ -96,6 +96,14 @@ func TestMatchBracket(t *testing.T) {
 			cursor: position{0, 1}, want: position{0, 6}, wantMatch: true, wantColor: parenColor,
 		},
 		{
+			name: "back over a stray closing bracket of another kind", lines: []string{"f(a] b)"},
+			cursor: position{0, 6}, want: position{0, 1}, wantMatch: true, wantColor: parenColor,
+		},
+		{
+			name: "back over two stray closing brackets", lines: []string{"f(a] b} c)"},
+			cursor: position{0, 9}, want: position{0, 1}, wantMatch: true, wantColor: parenColor,
+		},
+		{
 			name: "over lines", lines: []string{"f(", "\ta,", ")"},
 			cursor: position{0, 1}, want: position{2, 0}, wantMatch: true, wantColor: parenColor,
 		},
@@ -139,6 +147,18 @@ func TestMatchBracket(t *testing.T) {
 			name: "a bracket in a template literal is left alone", path: "app.js", lines: []string{"s = `(`"},
 			cursor: position{0, 5},
 		},
+		{
+			name: "the brace that opens a substitution is left alone", path: "app.js", lines: []string{"s = `${a}`"},
+			cursor: position{0, 6},
+		},
+		{
+			name: "brackets in a substitution match", path: "app.js", lines: []string{"s = `${f(a)}`"},
+			cursor: position{0, 8}, want: position{0, 10}, wantMatch: true, wantColor: parenColor,
+		},
+		{
+			name: "braces in a substitution match", path: "app.js", lines: []string{"s = `${ {a} }`"},
+			cursor: position{0, 8}, want: position{0, 10}, wantMatch: true, wantColor: braceColor,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -146,7 +166,8 @@ func TestMatchBracket(t *testing.T) {
 			if path == "" {
 				path = "f.go"
 			}
-			got := matchBracket(languageFor(path), toLines(tt.lines), tt.cursor)
+			e := &editor{lang: languageFor(path), lines: toLines(tt.lines)}
+			got := e.matchBracket(tt.cursor)
 			want := bracketPair{match: tt.want, matched: tt.wantMatch, color: tt.wantColor}
 			if got != want {
 				t.Errorf("matchBracket(%+v) = %+v, want %+v", tt.cursor, got, want)

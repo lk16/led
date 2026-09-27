@@ -26,24 +26,20 @@ const tabWidth = 8
 func (e *editor) render(w io.Writer) error {
 	e.scroll()
 	e.matchBrackets()
-	numWidth := len(strconv.Itoa(len(e.lines)))
-	gutter := numWidth + 1
+	gutter, width := e.gutter(), e.textCols()
 
 	var b bytes.Buffer
 	b.WriteString("\x1b[?25l\x1b[H")
-	st := e.stateAt(e.rowOff)
 	for i := range e.textRows() {
 		if row := e.rowOff + i; row < len(e.lines) {
-			var text string
-			text, st = e.renderLine(row, e.cols-gutter, st)
-			fmt.Fprintf(&b, "%s%*d %s%s", dim, numWidth, row+1, reset, text)
+			fmt.Fprintf(&b, "%s%*d %s%s", dim, gutter-1, row+1, reset, e.renderLine(row, width))
 		} else {
 			b.WriteString(dim + "~" + reset)
 		}
 		b.WriteString("\x1b[K\r\n")
 	}
 	e.renderStatus(&b)
-	fmt.Fprintf(&b, "\x1b[%d;%dH\x1b[?25h", max(e.cy-e.rowOff+1, 1), min(e.cursorColumn()+gutter+1, e.cols))
+	fmt.Fprintf(&b, "\x1b[%d;%dH\x1b[?25h", max(e.cy-e.rowOff+1, 1), min(e.cursorColumn()-e.colOff+gutter+1, e.cols))
 
 	_, err := w.Write(b.Bytes())
 	return err
@@ -54,15 +50,33 @@ func (e *editor) textRows() int {
 	return max(e.rows-1, 0)
 }
 
+// gutter is the width of the line numbers at the left, a number and a space.
+func (e *editor) gutter() int {
+	return len(strconv.Itoa(len(e.lines))) + 1
+}
+
+// textCols is the number of columns left for the file next to the line numbers.
+func (e *editor) textCols() int {
+	return max(e.cols-e.gutter(), 0)
+}
+
 // renderStatus draws the status bar over the whole width of the last row.
 func (e *editor) renderStatus(b *bytes.Buffer) {
 	bg, text := statusBg, e.name
-	if e.prompt {
+	if e.dirty {
+		text = "*" + text
+	}
+	switch {
+	case e.prompt:
 		bg, text = alertBg, unsavedPrompt
+	case e.alert != "":
+		bg, text = alertBg, e.alert
 	}
 	fmt.Fprintf(b, "%s%-*s%s", bg, e.cols, clip([]rune(text), e.cols), noBg)
 }
 
+// scroll moves the view so that the cursor is on it, up and down by rows and
+// sideways by screen columns.
 func (e *editor) scroll() {
 	if e.cy < e.rowOff {
 		e.rowOff = e.cy
@@ -70,27 +84,59 @@ func (e *editor) scroll() {
 	if e.cy >= e.rowOff+e.textRows() {
 		e.rowOff = e.cy - e.textRows() + 1
 	}
-}
 
-// stateAt returns the highlight state at the start of row, from the lines above it.
-func (e *editor) stateAt(row int) lineState {
-	var st lineState
-	for i := 0; i < row && i < len(e.lines); i++ {
-		_, st = e.lang.scan(e.lines[i], st)
+	col := e.cursorColumn()
+	if col < e.colOff {
+		e.colOff = col
 	}
-	return st
+	if col >= e.colOff+e.textCols() {
+		e.colOff = col - e.textCols() + 1
+	}
 }
 
-// renderLine returns row as it is shown, at most width columns wide. st is the
-// highlight state at the start of the row, the returned state is the one after it.
-func (e *editor) renderLine(row, width int, st lineState) (string, lineState) {
+// lineStates returns the cached state at the start of every line, and the one the
+// last line leaves. It scans the buffer when nothing is cached yet.
+// See docs/highlighting.md.
+func (e *editor) lineStates() []lineState {
+	if len(e.states) != len(e.lines)+1 {
+		e.states = make([]lineState, len(e.lines)+1)
+		e.rescan(0, len(e.states))
+	}
+	return e.states
+}
+
+// stateAt returns the highlight state at the start of row.
+func (e *editor) stateAt(row int) lineState {
+	return e.lineStates()[row]
+}
+
+// rescan recomputes the cached states below row, whose own state still holds. From
+// trusted on it stops as soon as a line keeps the state it had, because then so do
+// the lines below it. See docs/highlighting.md.
+func (e *editor) rescan(row, trusted int) {
+	st := e.states[row]
+	for y := row; y < len(e.lines); y++ {
+		_, st = e.lang.scan(e.lines[y], st)
+		if y+1 >= trusted && e.states[y+1] == st {
+			return
+		}
+		e.states[y+1] = st
+	}
+}
+
+// renderLine returns row as it is shown: width columns of it from the first one
+// the view shows.
+func (e *editor) renderLine(row, width int) string {
 	line := expandTabs(e.lines[row])
-	spans, next := e.lang.scan(line, st)
-	line = clipRunes(line, width)
-	from, to := e.selectedColumns(row, len(line))
+	spans, _ := e.lang.scan(line, e.stateAt(row))
 	colors := colorsOf(line, spans)
 	e.paintBrackets(row, colors)
-	return paint(line, colors, from, to), next
+	from, to := e.selectedColumns(row, len(line))
+
+	shown := window(line, e.colOff, width)
+	from = min(max(from-e.colOff, 0), len(shown))
+	to = min(max(to-e.colOff, 0), len(shown))
+	return paint(shown, window(colors, e.colOff, width), from, to)
 }
 
 // colorsOf returns the color of every column of line.
@@ -142,7 +188,7 @@ func paint(line []rune, colors []string, from, to int) string {
 }
 
 // selectedColumns returns the columns of row that the selection covers, both 0
-// when it covers none. The row shows columns 0 up to width.
+// when it covers none. The columns run from 0 up to width, the width of the row.
 func (e *editor) selectedColumns(row, width int) (int, int) {
 	start, end := e.selection()
 	if start == end || row < start.y || row > end.y {
@@ -171,6 +217,23 @@ func column(line []rune, i int) int {
 	return len(expandTabs(line[:min(i, len(line))]))
 }
 
+// indexAtColumn is the index in line of the rune whose columns cover col, the
+// inverse of column. A col inside a tab gives the index of that tab.
+func indexAtColumn(line []rune, col int) int {
+	at := 0
+	for i, r := range line {
+		width := 1
+		if r == '\t' {
+			width = tabWidth - at%tabWidth
+		}
+		if at+width > col {
+			return i
+		}
+		at += width
+	}
+	return len(line)
+}
+
 // expandTabs replaces every tab by spaces up to the next tab stop. See docs/terminal.md.
 func expandTabs(line []rune) []rune {
 	out := make([]rune, 0, len(line))
@@ -187,15 +250,21 @@ func expandTabs(line []rune) []rune {
 }
 
 func clip(line []rune, width int) string {
-	return string(clipRunes(line, width))
+	return string(window(line, 0, width))
 }
 
-func clipRunes(line []rune, width int) []rune {
+// window returns the part of a row the screen shows: width columns of it, from
+// column off.
+func window[T any](row []T, off, width int) []T {
+	if off > len(row) {
+		off = len(row)
+	}
+	row = row[off:]
 	if width < 0 {
 		width = 0
 	}
-	if len(line) > width {
-		line = line[:width]
+	if len(row) > width {
+		row = row[:width]
 	}
-	return line
+	return row
 }

@@ -2,12 +2,16 @@ package editor
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
+	"testing/iotest"
+	"time"
 )
 
 func runLoop(t *testing.T, e *editor, in string) string {
@@ -18,6 +22,183 @@ func runLoop(t *testing.T, e *editor, in string) string {
 		t.Fatalf("loop: %v", err)
 	}
 	return b.String()
+}
+
+// frames hands the test every screen the loop draws, one per write.
+type frames chan string
+
+func (f frames) Write(p []byte) (int, error) {
+	f <- string(p)
+	return len(p), nil
+}
+
+// waitFor returns once a drawn screen matches want.
+func (f frames) waitFor(t *testing.T, what string, want func(frame string) bool) {
+	t.Helper()
+	for {
+		select {
+		case frame := <-f:
+			if want(frame) {
+				return
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("no screen was drawn %s", what)
+		}
+	}
+}
+
+// runLoopInBackground runs the loop on keys written to in, drawing to out.
+func runLoopInBackground(e *editor, in io.Reader, out io.Writer) <-chan error {
+	done := make(chan error, 1)
+	go func() { done <- e.loop(bufio.NewReader(in), bufio.NewWriter(out)) }()
+	return done
+}
+
+func TestReadSize(t *testing.T) {
+	tests := []struct {
+		name     string
+		size     func() (int, int, error)
+		wantRows int
+		wantCols int
+	}{
+		{"the size of the terminal", func() (int, int, error) { return 5, 30, nil }, 5, 30},
+		{"an error keeps the old size", func() (int, int, error) { return 0, 0, errors.New("no size") }, 2, 40},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &editor{rows: 2, cols: 40, size: tt.size}
+			e.readSize()
+			if e.rows != tt.wantRows || e.cols != tt.wantCols {
+				t.Errorf("size = %dx%d, want %dx%d", e.rows, e.cols, tt.wantRows, tt.wantCols)
+			}
+		})
+	}
+}
+
+func TestLoopRedrawsAfterAResize(t *testing.T) {
+	e := newTestEditor(t, "a\n")
+	e.name = "f.txt"
+	e.rows, e.cols = 2, 40
+	resized := make(chan os.Signal, 1)
+	e.resized = resized
+	e.size = func() (int, int, error) { return 5, 30, nil }
+	keys, writeKey := io.Pipe()
+	drawn := make(frames, 8)
+	done := runLoopInBackground(e, keys, drawn)
+
+	resized <- syscall.SIGWINCH
+	drawn.waitFor(t, "at the new size", func(frame string) bool {
+		return strings.Contains(frame, statusBar("f.txt", 30)) && strings.Count(frame, "\r\n") == 4
+	})
+
+	if _, err := writeKey.Write([]byte{0x17}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("loop: %v", err)
+	}
+	if err := writeKey.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoopClearsTheAlertWithoutAKeyPress(t *testing.T) {
+	defer func(d time.Duration) { alertTimeout = d }(alertTimeout)
+	alertTimeout = 10 * time.Millisecond
+
+	e := newTestEditor(t, "a\n")
+	e.rows, e.cols = 2, 40
+	keys, writeKey := io.Pipe()
+	drawn := make(frames, 8)
+	done := runLoopInBackground(e, keys, drawn)
+
+	if _, err := writeKey.Write([]byte{0x02}); err != nil {
+		t.Fatal(err)
+	}
+	alert := alertBg + "ctrl + b is not a key led knows"
+	drawn.waitFor(t, "with the error", func(frame string) bool { return strings.Contains(frame, alert) })
+	drawn.waitFor(t, "without the error", func(frame string) bool { return !strings.Contains(frame, alert) })
+
+	if _, err := writeKey.Write([]byte{0x17}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("loop: %v", err)
+	}
+	if err := writeKey.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The same key pressed again puts the error up for the whole three seconds, not
+// for what is left of the first press.
+func TestLoopGivesARepeatedErrorTheWholeTime(t *testing.T) {
+	defer func(d time.Duration) { alertTimeout = d }(alertTimeout)
+	alertTimeout = 200 * time.Millisecond
+
+	e := newTestEditor(t, "a\n")
+	e.rows, e.cols = 2, 40
+	keys, writeKey := io.Pipe()
+	drawn := make(frames, 16)
+	done := runLoopInBackground(e, keys, drawn)
+
+	alert := alertBg + "ctrl + b is not a key led knows"
+	press := func() {
+		if _, err := writeKey.Write([]byte{0x02}); err != nil {
+			t.Fatal(err)
+		}
+		drawn.waitFor(t, "with the error", func(frame string) bool { return strings.Contains(frame, alert) })
+	}
+	press()
+	time.Sleep(alertTimeout * 3 / 4)
+	press()
+
+	start := time.Now()
+	drawn.waitFor(t, "without the error", func(frame string) bool { return !strings.Contains(frame, alert) })
+	if up := time.Since(start); up < alertTimeout/2 {
+		t.Errorf("the error went away %v after the second press, want at least %v", up, alertTimeout/2)
+	}
+
+	if _, err := writeKey.Write([]byte{0x17}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("loop: %v", err)
+	}
+	if err := writeKey.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A key press takes the error away, so it never sits under what is typed.
+func TestLoopTakesTheErrorAwayOnAKeyPress(t *testing.T) {
+	e := newTestEditor(t, "a\n")
+	e.rows, e.cols = 2, 40
+	keys, writeKey := io.Pipe()
+	drawn := make(frames, 16)
+	done := runLoopInBackground(e, keys, drawn)
+
+	alert := alertBg + "ctrl + b is not a key led knows"
+	if _, err := writeKey.Write([]byte{0x02}); err != nil {
+		t.Fatal(err)
+	}
+	drawn.waitFor(t, "with the error", func(frame string) bool { return strings.Contains(frame, alert) })
+
+	// A move, so the three seconds of the error cannot be what takes it away.
+	if _, err := writeKey.Write([]byte("\x1b[D")); err != nil {
+		t.Fatal(err)
+	}
+	drawn.waitFor(t, "without the error", func(frame string) bool { return !strings.Contains(frame, alert) })
+
+	if _, err := writeKey.Write([]byte{0x17}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("loop: %v", err)
+	}
+	if err := writeKey.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestLoopTypesAndQuits(t *testing.T) {
@@ -44,7 +225,7 @@ func TestLoopSavesOnCtrlS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := string(data), "hi\n"; got != want {
+	if got, want := string(data), "hi"; got != want {
 		t.Errorf("file = %q, want %q", got, want)
 	}
 }
@@ -143,9 +324,45 @@ func TestLoopReturnsWriteError(t *testing.T) {
 	}
 }
 
+// A screen that fits in the buffer of the writer only reaches the terminal on the
+// flush, so that is where its error comes from.
+func TestLoopReturnsFlushError(t *testing.T) {
+	e := &editor{lines: toLines([]string{"a"}), rows: 1, cols: 20}
+	err := e.loop(bufio.NewReader(strings.NewReader("a")), bufio.NewWriterSize(errWriter{}, 4096))
+	if err == nil {
+		t.Error("loop with a failing flush: got nil error, want an error")
+	}
+}
+
+// The end of the input closes the editor, any other error from it does not.
+func TestLoopReturnsReadError(t *testing.T) {
+	e := &editor{lines: toLines([]string{"a"}), rows: 1, cols: 20}
+	want := errors.New("read failed")
+	err := e.loop(bufio.NewReader(iotest.ErrReader(want)), bufio.NewWriter(io.Discard))
+	if !errors.Is(err, want) {
+		t.Errorf("loop with a failing reader = %v, want %v", err, want)
+	}
+}
+
 func TestRunReturnsOpenError(t *testing.T) {
 	if err := Run(t.TempDir()); err == nil {
 		t.Error("Run on a directory: got nil error, want an error")
+	}
+}
+
+// led draws on a terminal, so it stops when its input is not one. See docs/terminal.md.
+func TestRunNeedsATerminal(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "stdin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	defer func(stdin *os.File) { os.Stdin = stdin }(os.Stdin)
+	os.Stdin = f
+
+	if err := Run(filepath.Join(t.TempDir(), "f.txt")); err == nil {
+		t.Error("Run with a regular file as input: got nil error, want an error")
 	}
 }
 

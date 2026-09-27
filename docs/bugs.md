@@ -5,34 +5,23 @@ Take a line off this list in the commit that fixes it.
 
 ## Files
 
-- A file that ends without a newline gets one on save. An empty file becomes a single newline.
 - A CRLF file keeps the `\r` at the end of every line. It is a rune in the buffer like any other, and drawing it puts the cursor back to the first column.
 - Bytes that are not UTF-8 are read as U+FFFD and saved as U+FFFD, so opening a binary or Latin-1 file and saving it damages it.
 - A save truncates the file in place, with no temporary file and rename. A write that fails halfway, on a full disk, leaves the file short.
 
 ## Screen
 
-- No horizontal scrolling. Past the width of the screen a line is cut off and the cursor stays at the right edge, so typing there is blind.
-- A resized terminal goes unnoticed. led reads the size once, at startup, and keeps drawing at that one.
 - Wide characters (CJK, emoji) count as one column everywhere, the status bar included. See [terminal.md](terminal.md).
-- The status bar says nothing about unsaved changes, so there is no way to see them before closing.
+- A screen narrower than the line numbers draws them anyway, so every row runs past the width and wraps.
 
 ## Keys
 
-- Ctrl + c and ctrl + z do nothing. Raw mode turns the signal keys off and led installs no handler, so ctrl + w is the only way out.
-- Application cursor keys, `\x1bOA` for up, are not read. led takes the `\x1b` for the escape key and types the `O` and the `A`.
-- Ctrl with home, end, page up or down does the same as without it. The start and the end of the file have no key.
+- No key interrupts or suspends led. Raw mode turns the signal keys off and led binds ctrl + c and ctrl + z itself, so ctrl + w is the only way out.
 - An escape sequence that arrives in pieces, over a slow link, is read as the escape key and then typed. See [terminal.md](terminal.md).
-- There is no undo.
-- Nothing uses the selection. There is no cut, copy or paste. See [features.md](features.md).
-
-## Highlighting
-
-- Python triple quotes are colored only on the lines where a quote opens and where one closes. See [highlighting.md](highlighting.md).
-- A Rust lifetime, `&'a str`, reads as a string that opens and never closes.
-- `${...}` in a JavaScript template literal is colored as part of the string.
+- Undo does not clear the unsaved changes mark. Taking every change back still leaves the buffer as changed.
 
 ## Speed
 
-- Every key press walks the lines above the screen to know which strings and comments are still open at the top of it, and with the cursor on a bracket it walks the buffer from the first line again to find the match. Nothing is kept between key presses.
-- One key press at the end of a file of Go, measured: 1.4 ms at 1000 lines, 13 ms at 10 000, 131 ms at 100 000. With the cursor on a bracket: 3.4 ms, 34 ms, 325 ms.
+- A bracket that nothing closes is only known to have no match at the first or the last line of the buffer, so the cursor on one reads every line: 1.6 ms at 1000 lines, 17 ms at 10 000, 160 ms at 100 000. A bracket whose match is near costs only the lines in between.
+- A key press that adds or takes away a line rebuilds the list of lines: 0.08 ms at 1000 lines, 0.3 ms at 10 000, 1.5 ms at 100 000. A key press inside one line is 0.06 ms at all three.
+- Opening a file reads it once, from the first line, to know what every line leaves open.

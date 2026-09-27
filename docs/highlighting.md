@@ -12,9 +12,10 @@ A file with any other extension gets no highlighting. led always opens a named f
 ## Per language
 
 A `language` in `internal/editor/highlight.go` holds the keyword list, the line
-comment marker, the block comment markers, the string delimiters and which of
-those delimiters open a string without escapes. A new language is a new entry in
-that table, nothing else.
+comment marker, the block comment markers, the string delimiters, which of those
+delimiters may run over more lines, which open a string without escapes, the
+opener of code in a string, and whether the language has lifetimes. A new language
+is a new entry in that table, nothing else.
 
 ## Colors
 
@@ -42,9 +43,12 @@ does not.
 
 - A keyword is a whole word: letters, digits and `_` around it make it plain text again. Keywords in a string or a comment are plain.
 - A number is a word that starts with a digit, plus a dot between digits. So `0xff`, `1e9` and `3.14` are numbers, and `x2` is not.
-- A string runs to its closing quote. Inside `"` and `'` a backslash escapes the next character.
+- A string runs to its closing delimiter. Inside `"` and `'` a backslash escapes the next character.
+- A delimiter can be more than one rune. Python's `"""` and `'''` are delimiters of their own, and they win over the single quote they start with, so `"""a"""` is one string and `""` is an empty one.
 - An escape sequence is a backslash and what belongs to it: `\x` and two hex digits, `\u` and four, `\U` and eight, `\u{...}` up to the brace, up to three octal digits, or one other character. Fewer digits than that stop it, so `\xz` is just `\x`.
-- Which strings have escapes is per language, not per delimiter. A Go raw string, `` `a\n` ``, has none, a JavaScript template literal has them. `${...}` in a template literal is not handled.
+- A `'` in a language with lifetimes, so Rust, opens a string only when it closes right after one character or one escape: `'a'`, `'\n'`, `'\''`, `'\u{1F600}'`. Anything else is a lifetime, `&'a str` or `'static`, and stays plain. Go and Python have no lifetimes, so there a `'` always opens a string.
+- Which strings have escapes is per language, not per delimiter. A Go raw string, `` `a\n` ``, has none, a JavaScript template literal has them.
+- In a JavaScript template literal the `${` and the `}` of a `${...}` belong to the string, what is between them is code. So a keyword, a number, a string or a bracket in it gets its own color. Nested braces, `${ {a: 1} }`, and nested template literals, `` ${`a${b}c`} ``, work. Which opener does this is per language: Go has none, so `` `a${b}` `` is one string.
 
 ## Brackets
 
@@ -53,29 +57,43 @@ right inside another is easy to tell apart. led colors only the pair the cursor
 is on, so the kind is the only thing left to color by. VS Code colors every pair
 in the file and goes by nesting depth instead.
 
-led reads the buffer as one text, from the first line down, and keeps the open
-brackets on a stack. Whatever pops the bracket under the cursor off that stack is
-its match, and both get the color of their kind.
+led walks out from the bracket under the cursor, down from an opening one and up
+from a closing one, and keeps the brackets it passes on a stack. The one that the
+stack leaves standing is the match, and both get the color of their kind. The walk
+reads no further than the match.
 
-A bracket turns red when it closes one of another kind, when the stack is empty
-under it, or when nothing ever pops it. A stray closing bracket pops nothing, so
-a pair around it still matches: a file with one bracket too many stays readable
-while it is being fixed.
+A bracket turns red when it meets one of another kind, when there is nothing for
+it to close, or when nothing ever closes it. A stray closing bracket closes
+nothing, so a pair around it still matches: a file with one bracket too many stays
+readable while it is being fixed.
 
 Only code counts. A bracket in a string, a comment or an escape sequence is
 skipped, and with the cursor on one of those nothing is colored. The scan asks
 the same line scanner that colors the text and takes every rune it leaves plain.
-A keyword or a number can never hold a bracket, so plain is the whole test.
+A keyword or a number can never hold a bracket, so plain is the whole test. The
+braces of a `${...}` are part of the string, so they do not count; the brackets in
+the code between them do.
 
-The scan walks the buffer on every key press. See [bugs.md](bugs.md).
+A bracket with no match is only known to have none at the first or the last line
+of the buffer, so that is the one case the walk still reads everything. See
+[bugs.md](bugs.md).
 
 ## Over more than one line
 
-A block comment and a string in backticks, so a Go raw string and a JavaScript
-template literal, may span lines. led scans from the first line of the file down
-to the first line on screen to know what is still open there.
+A block comment and a string whose delimiter may span lines, so a Go raw string, a
+JavaScript template literal and a Python triple-quoted string, run on until they
+close. A `${...}` in a template literal does too. led keeps what every line leaves open,
+one state per line, so it knows what is open at the top of the screen without
+reading the lines above it again. It scans the whole file once, when the file
+opens, and an edit throws away only the states below it that it makes invalid: the
+scan stops as soon as a line keeps the state it had, because then so do the lines
+under it.
 
-Nothing else spans lines. A `"` string that is not closed ends with its line.
-Python's triple quotes are not handled: a docstring is only colored on the lines
-where a quote opens and closes. A Rust lifetime, `&'a str`, looks like a string
-that opens and never closes.
+What a line leaves open is a `lineState`: a flag for a block comment and a string
+with one mark per open string and `${...}`, the innermost last. A mark for a string
+is the first rune of its delimiter, so three quotes take one mark like a backtick
+does. The state is a value led only reads, so it is safe to keep and to copy, which is
+what the one state per line above needs.
+
+Nothing else spans lines. A `"` or `'` string that is not closed ends with its
+line, and so does a Rust lifetime, which opens no string at all.

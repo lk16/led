@@ -11,10 +11,15 @@ import (
 type key rune
 
 const (
+	keyCtrlC  key = 0x03
 	keyTab    key = '\t'
 	keyEnter  key = '\r'
 	keyCtrlS  key = 0x13
+	keyCtrlV  key = 0x16
 	keyCtrlW  key = 0x17
+	keyCtrlX  key = 0x18
+	keyCtrlY  key = 0x19
+	keyCtrlZ  key = 0x1a
 	keyEscape key = 0x1b
 	keyBack   key = 0x7f
 )
@@ -49,6 +54,16 @@ func (k key) isVertical() bool {
 	return false
 }
 
+// isControl reports whether k is a control byte, a key pressed with ctrl.
+func (k key) isControl() bool {
+	return k < ' '
+}
+
+// name returns k the way docs/features.md writes it, e.g. "ctrl + b".
+func (k key) name() string {
+	return "ctrl + " + strings.ToLower(string(rune(k+0x40)))
+}
+
 // isMove reports whether k moves the cursor, with or without modifiers.
 func (k key) isMove() bool {
 	switch k &^ (modShift | modCtrl) {
@@ -58,7 +73,8 @@ func (k key) isMove() bool {
 	return false
 }
 
-// readKey returns one key press. An escape sequence becomes a single key.
+// readKey returns one key press. An escape sequence, in either its "\x1b[" or
+// its "\x1bO" form, becomes a single key.
 func readKey(in *bufio.Reader) (key, error) {
 	r, _, err := in.ReadRune()
 	if err != nil {
@@ -77,20 +93,26 @@ func readKey(in *bufio.Reader) (key, error) {
 	if err != nil {
 		return 0, err
 	}
-	if b != '[' {
-		return keyEscape, in.UnreadByte()
-	}
-
-	var params []byte
-	for {
+	switch b {
+	case '[':
+		var params []byte
+		for {
+			if b, err = in.ReadByte(); err != nil {
+				return 0, err
+			}
+			if b >= '@' && b <= '~' {
+				return escapeKey(params, b), nil
+			}
+			params = append(params, b)
+		}
+	case 'O':
+		// An SS3 sequence has no parameters. See docs/terminal.md.
 		if b, err = in.ReadByte(); err != nil {
 			return 0, err
 		}
-		if b >= '@' && b <= '~' {
-			return escapeKey(params, b), nil
-		}
-		params = append(params, b)
+		return escapeKey(nil, b), nil
 	}
+	return keyEscape, in.UnreadByte()
 }
 
 // tildeKeys are the keys that arrive as a number and a "~". See docs/terminal.md.
